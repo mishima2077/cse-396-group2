@@ -9,7 +9,7 @@ This module integrates the HC-SR04 ultrasonic sensor to measure distances and pr
 
 | Name              | Student ID       |
 |-------------------|------------------|
-| Ahmet Halil YAMLI | [ID]             |
+| Ahmet Halil YAMLI | 220104004957     |
 | Derya UYSAL       | 220104004045     |
 
 ---
