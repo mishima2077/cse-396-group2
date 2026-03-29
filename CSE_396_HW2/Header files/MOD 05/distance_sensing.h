@@ -1,7 +1,7 @@
 /**
  * @file distance_sensing.h
  * @brief Interface for HC-SR04 ultrasonic sensor and threshold detection.
- * @author Ahmet Halil Y., Derya U., Mehmet Alp A., Adil Mert E.
+ * @author Ahmet Halil Y., Derya U.
  * @date 2026-03-28
  * @version 0.1
  */
@@ -13,7 +13,8 @@
 
 #define DIST_SAFE_THRESHOLD_CM 15
 
-typedef struct {
+typedef struct
+{
     uint16_t distance_cm;
     uint32_t timestamp;
 } dist_reading_t;

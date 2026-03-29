@@ -1,7 +1,7 @@
 /**
  * @file motion_control.h
  * @brief Differential drive logic and motor speed control for the rover.
- * @author Cemal G., Ahmet Halil Y., Derya U.
+ * @author Ahmet Halil Y., Derya U.
  * @date 2026-03-28
  * @version 0.1
  * * Changelog:
@@ -24,17 +24,19 @@
 
 /* -- Data Types ---------------------------------------------------------- */
 
-/** * @brief Operational status of the motion module 
+/** * @brief Operational status of the motion module
  */
-typedef enum {
-    MOTION_OK = 0,         /**< Module operating normally */
+typedef enum
+{
+    MOTION_OK = 0,          /**< Module operating normally */
     MOTION_ERR_DRIVER = -1, /**< Motor driver communication error */
     MOTION_ERR_PARAM = -2   /**< Invalid speed or direction parameter */
 } motion_status_t;
 
-/** * @brief Available movement directions for the differential drive 
+/** * @brief Available movement directions for the differential drive
  */
-typedef enum {
+typedef enum
+{
     MOTION_DIR_STOP = 0,
     MOTION_DIR_FORWARD,
     MOTION_DIR_BACKWARD,
@@ -42,9 +44,10 @@ typedef enum {
     MOTION_DIR_RIGHT
 } motion_direction_t;
 
-/** * @brief Current state of the locomotion system 
+/** * @brief Current state of the locomotion system
  */
-typedef struct {
+typedef struct
+{
     motion_direction_t current_direction; /**< Active movement vector */
     uint8_t speed_left;                   /**< PWM value for left motors */
     uint8_t speed_right;                  /**< PWM value for right motors */
