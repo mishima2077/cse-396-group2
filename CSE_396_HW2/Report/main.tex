@@ -1,0 +1,102 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\title{Assignment 2: Module Interface \& Header Design}
+\author{Autonomous Fire Detection and Suppression Rover}
+\date{March 28, 2026}
+
+\begin{document}
+
+% --- 3.1 COVER PAGE ---
+\begin{titlepage}
+    \centering
+    \vspace*{0.5in}
+    \Huge \textbf{CSE 396 - Computer Engineering Project} \\
+    \vspace{0.4in}
+    \huge \textbf{Assignment 2: Module Interface \& Header Design} \\
+    \vspace{0.6in}
+    \Large \textbf{Project Title:} \\
+    Autonomous Fire Detection and Suppression Rover \\
+    \vspace{0.6in}
+    \Large \textbf{Team Members \& Primary Assignments:} \\
+    \normalsize
+    \vspace{0.2in}
+    \begin{tabularx}{\textwidth}{l l X}
+        \textbf{Name} & \textbf{Student ID} & \textbf{Assigned Submodules} \\ \midrule
+        Görkem UYSAL & 230104004174 & MOD-07, MOD-08 \\
+        Cemal GÜMÜŞ & 210104004304 & MOD-01, MOD-03 \\
+        Melih KAZANCI & 230104004909 & MOD-01, MOD-03 \\
+        Ahmet Halil YAMLI & [ID] & MOD-04, MOD-05 \\
+        Derya UYSAL & 220104004045 & MOD-04, MOD-05 \\
+        Mehmet Alp ATAY & 220104004020 & MOD-02, MOD-06 \\
+        Adil Mert ERGÖRÜN & 220104004048 & MOD-02, MOD-06 \\
+        Ayşe Feyza SERBEST & 220104004052 & MOD-07, MOD-08 \\
+    \end{tabularx}
+    \vfill
+    \Large \textbf{Date:} March 28, 2026
+\end{titlepage}
+
+% --- 3.2 MODULE-STUDENT MATCHING TABLE ---
+\section{Module-Student Matching Table}
+The following table provides the formal mapping of team members to the technical submodules defined for the rover system.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{ID} & \textbf{Module Name} & \textbf{Responsible Student(s)} & \textbf{Brief Role} \\ \midrule
+MOD-01 & Flame Sensing HW & Melih K., Cemal G. & Sensor mounting, wiring, and noise reduction. \\
+MOD-02 & Flame Detect. SW & Mehmet Alp A., Adil Mert E. & Signal filtering and direction estimation. \\
+MOD-03 & Locomotion HW & Melih K., Cemal G. & Chassis assembly and motor driver wiring. \\
+MOD-04 & Motion Control SW & Derya U., Ahmet Halil Y. & Differential drive and speed control logic. \\
+MOD-05 & Dist. Sensing & Derya U., Ahmet Halil Y. & HC-SR04 integration and thresholding. \\
+MOD-06 & Suppression HW & Mehmet Alp A., Adil Mert E. & Water pump, relay, and tank integration. \\
+MOD-07 & Autonomy SW & Görkem U., Ayşe Feyza S. & FSM design and decision logic coordination. \\
+MOD-08 & Integration/Test & Görkem U., Ayşe Feyza S. & End-to-end verification and debugging. \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+% --- 3.3 SYSTEM / MODULE OVERVIEW ---
+\section{System / Module Overview}
+The rover utilizes a distributed architecture where hardware-facing modules (MOD-01, 03, 05, 06) interact with software processing modules (MOD-02, 04, 07) to achieve autonomous suppression.
+
+\subsection{Module Purpose Summaries}
+\begin{itemize}
+    \item \textbf{MOD-01 \& MOD-02:} Together, these modules handle the "Detect" phase of the FSM by providing a filtered direction vector toward the flame.
+    \item \textbf{MOD-03 \& MOD-04:} These handle the physical movement of the robot, translating high-level commands (e.g., "Turn Left") into PWM signals for the motors.
+    \item \textbf{MOD-05:} This module provides critical safety feedback, ensuring the rover stops within the required distance to prevent collision with the fire source.
+    \item \textbf{MOD-06:} Manages the final suppression stage, activating the relay for the water pump once the target is reached.
+    \item \textbf{MOD-07 \& MOD-08:} These oversee the system states and ensure all submodules interact correctly during full-cycle operation.
+\end{itemize}
+
+% --- 3.5 INTER-MODULE COMMUNICATION DESCRIPTION ---
+\section{Inter-Module Communication Description}
+The communication architecture relies on structured data exchange between hardware drivers and control logic.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{l l l l l X}
+\toprule
+\textbf{From} & \textbf{To} & \textbf{Data / Signal} & \textbf{Type} & \textbf{Dir.} & \textbf{Notes} \\ \midrule
+MOD-01 & MOD-02 & \texttt{raw\_adc\_values} & \texttt{uint16\_t[]} & $01 \to 02$ & Raw IR intensity per sensor. \\
+MOD-02 & MOD-07 & \texttt{flame\_data\_t} & \texttt{struct} & $02 \to 07$ & Direction enum and intensity proxy for distance. \\
+MOD-05 & MOD-07 & \texttt{distance\_mm} & \texttt{uint16\_t} & $05 \to 07$ & Target distance; 20Hz update. \\
+MOD-07 & MOD-04 & \texttt{motion\_cmd\_t} & \texttt{struct} & $07 \to 04$ & Includes direction and speed. \\
+MOD-07 & MOD-06 & \texttt{pump\_active} & \texttt{bool} & $07 \to 06$ & Trigger for suppression relay. \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+% --- 3.6 KNOWN RISKS ---
+\section{Known Risks \& Open Questions}
+\begin{enumerate}
+    \item \textbf{Communication Latency:} Frequent polling of the ultrasonic sensor (MOD-05) may block the FSM (MOD-07) execution if not implemented using non-blocking interrupts.
+    \item \textbf{Module Overlap:} Since several members span multiple modules (e.g., MOD-04 and MOD-05), maintaining strict interface boundaries in code will be critical to prevent tight coupling.
+\end{enumerate}
+
+\end{document}

@@ -1,0 +1,34 @@
+compile.ps1
+*.synctex.gz
+*.synctex.gz(busy)
+
+# C/C++ compiled objects
+*.slo
+*.lo
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# LaTeX build files
+*.aux
+*.bbl
+*.blg
+*.fls
+*.log
+*.nav
+*.ptc
+*.run.xml
+*.snm
+*.toc
+*.vrb
+*.dvi
+*.pdfsync
+
+# OS generated files
+.DS_Store
+Thumbs.db
