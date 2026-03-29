@@ -4,10 +4,12 @@
 \usepackage{tabularx}
 \usepackage{booktabs}
 \usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{float}
 
 \title{Assignment 2: Module Interface \& Header Design}
 \author{Autonomous Fire Detection and Suppression Rover}
-\date{March 28, 2026}
+\date{March 29, 2026}
 
 \begin{document}
 
@@ -19,7 +21,7 @@
     \vspace{0.4in}
     \huge \textbf{Assignment 2: Module Interface \& Header Design} \\
     \vspace{0.6in}
-    \Large \textbf{Project Title:} \\
+    \Large \textbf{Group 2} \\
     Autonomous Fire Detection and Suppression Rover \\
     \vspace{0.6in}
     \Large \textbf{Team Members \& Primary Assignments:} \\
@@ -37,8 +39,11 @@
         Ayşe Feyza SERBEST & 220104004052 & MOD-07, MOD-08 \\
     \end{tabularx}
     \vfill
-    \Large \textbf{Date:} March 28, 2026
+    \Large \textbf{Date:} March 29, 2026
 \end{titlepage}
+
+\tableofcontents
+\newpage
 
 % --- 3.2 MODULE-STUDENT MATCHING TABLE ---
 \section{Module-Student Matching Table}
@@ -50,20 +55,30 @@ The following table provides the formal mapping of team members to the technical
 \begin{tabularx}{\textwidth}{l l l X}
 \toprule
 \textbf{ID} & \textbf{Module Name} & \textbf{Responsible Student(s)} & \textbf{Brief Role} \\ \midrule
-MOD-01 & Flame Sensing HW & Melih K., Cemal G. & Sensor mounting, wiring, and noise reduction. \\
+MOD-01 & Flame Sensing HW & Cemal G., Melih K. & Sensor mounting, wiring, and noise reduction. \\
 MOD-02 & Flame Detect. SW & Mehmet Alp A., Adil Mert E. & Signal filtering and direction estimation. \\
-MOD-03 & Locomotion HW & Melih K., Cemal G. & Chassis assembly and motor driver wiring. \\
-MOD-04 & Motion Control SW & Derya U., Ahmet Halil Y. & Differential drive and speed control logic. \\
-MOD-05 & Dist. Sensing & Derya U., Ahmet Halil Y. & HC-SR04 integration and thresholding. \\
+MOD-03 & Locomotion HW & Cemal G., Melih K. & Chassis assembly and motor driver wiring. \\
+MOD-04 & Motion Control SW & Ahmet Halil Y., Derya U. & Differential drive and speed control logic. \\
+MOD-05 & Dist. Sensing & Ahmet Halil Y., Derya U. & HC-SR04 integration and thresholding. \\
 MOD-06 & Suppression HW & Mehmet Alp A., Adil Mert E. & Water pump, relay, and tank integration. \\
-MOD-07 & Autonomy SW & Görkem U., Ayşe Feyza S. & FSM design and decision logic coordination. \\
-MOD-08 & Integration/Test & Görkem U., Ayşe Feyza S. & End-to-end verification and debugging. \\ \bottomrule
+MOD-07 & Autonomy SW & Ayşe Feyza S., Görkem U. & FSM design and decision logic coordination. \\
+MOD-08 & Integration/Test & Ayşe Feyza S., Görkem U. & End-to-end verification and debugging. \\ \bottomrule
 \end{tabularx}
 \end{table}
 
 % --- 3.3 SYSTEM / MODULE OVERVIEW ---
 \section{System / Module Overview}
 The rover utilizes a distributed architecture where hardware-facing modules (MOD-01, 03, 05, 06) interact with software processing modules (MOD-02, 04, 07) to achieve autonomous suppression.
+
+\subsection{Block Diagram}
+The overall system structure and inter-module data flow are illustrated in Figure~\ref{fig:block-diagram}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{diagram.png}
+    \caption{System / module block diagram}
+    \label{fig:block-diagram}
+\end{figure}
 
 \subsection{Module Purpose Summaries}
 \begin{itemize}
@@ -74,23 +89,167 @@ The rover utilizes a distributed architecture where hardware-facing modules (MOD
     \item \textbf{MOD-07 \& MOD-08:} These oversee the system states and ensure all submodules interact correctly during full-cycle operation.
 \end{itemize}
 
+\subsection{Overall System Architecture}
+\begin{itemize}
+\item The proposed system follows a centralized embedded architecture based on a single microcontroller unit (MCU). An ESP32 DevKit V1 is used as the main processing unit, responsible for coordinating all sensing, decision-making, and actuation tasks.
+
+\item All hardware modules are directly interfaced with the MCU. Flame sensors (MOD-01) and the ultrasonic distance sensor (MOD-05) provide real-time environmental data through analog and digital inputs. This data is processed within the MCU to determine the system state and appropriate actions using a finite state machine.
+
+\item The locomotion module (MOD-03) and fire suppression module (MOD-06) act as output subsystems. The MCU generates control signals such as PWM for motor speed and digital signals for relay activation. These signals are used to drive the motors via the motor driver and to control the water pump for fire extinguishing.
+
+\item The system does not rely on an external host computer or FPGA. All computation is performed on the embedded platform, ensuring real-time responsiveness and system autonomy. The architecture is designed to be modular, allowing independent development and testing of submodules while maintaining a clear and structured integration through the central controller.
+\end{itemize}
+
+\section{Hardware \& Platform Summary}
+
+\subsection{Target Hardware}
+
+The system is built around a low-cost embedded platform suitable for real-time sensing and control.
+
+\begin{itemize}
+    \item \textbf{Microcontroller (MCU):} ESP32 DevKit V1
+    \begin{itemize}
+        \item Dual-core processor up to 240 MHz
+        \item Integrated Wi-Fi and Bluetooth
+        \item 12-bit ADC for analog sensor input
+    \end{itemize}
+
+    \item \textbf{Flame Sensors (MOD-01):} 3× KY-026 Flame Sensor Module
+    \begin{itemize}
+        \item Infrared-based flame detection
+        \item Provides both analog (intensity) and digital (threshold) outputs
+        \item Used for directional fire localization (left, center, right)
+    \end{itemize}
+
+    \item \textbf{Motor Driver (MOD-03):} L298N Motor Driver Module
+    \begin{itemize}
+        \item Dual H-bridge motor driver
+        \item Controls two DC motors for differential drive
+    \end{itemize}
+
+    \item \textbf{Locomotion Platform:} Custom Robot Car Chassis
+    \begin{itemize}
+        \item Placed onto a custom designed platform
+        \item Includes two DC gear motors and wheels
+        \item Enables differential drive navigation
+    \end{itemize}
+
+    \item \textbf{Power Supply:} 7.4V LiPo Battery Pack
+    \begin{itemize}
+        \item Supplies motors and pump
+        \item Regulated output for MCU and sensors
+    \end{itemize}
+\end{itemize}
+
+\subsection{Communication Buses Used}
+
+The system uses simple embedded communication mechanisms:
+
+\begin{itemize}
+    \item \textbf{GPIO (Digital I/O):}
+    \begin{itemize}
+        \item Flame sensor digital outputs
+        \item Relay control signal
+        \item Motor direction control
+    \end{itemize}
+
+    \item \textbf{ADC (Analog-to-Digital Converter):}
+    \begin{itemize}
+        \item Flame sensor analog outputs for intensity comparison
+    \end{itemize}
+
+    \item \textbf{PWM (Pulse Width Modulation):}
+    \begin{itemize}
+        \item Motor speed control via motor driver
+    \end{itemize}
+
+\end{itemize}
+
+No high-level communication buses such as I2C, SPI, or CAN are required in the current design.
+
+\subsection{Clock Frequencies and Voltage Levels}
+
+\begin{itemize}
+    \item \textbf{MCU Clock Frequency:}
+    \begin{itemize}
+        \item ESP32 operates up to 240 MHz
+    \end{itemize}
+
+    \item \textbf{Operating Voltage Levels:}
+    \begin{itemize}
+        \item ESP32 logic level: 3.3V
+        \item Sensors (KY-026): 5V
+        \item Motor driver and motors: 7.4V (battery supply)
+    \end{itemize}
+
+    \item \textbf{Level Compatibility:}
+    \begin{itemize}
+        \item Voltage differences are handled using compatible inputs or simple level shifting when required
+    \end{itemize}
+\end{itemize}
+
+\subsection{External Libraries and SDKs}
+
+\begin{itemize}
+    \item \textbf{Arduino Core for ESP32}
+    \begin{itemize}
+        \item Provides abstraction for GPIO, ADC, PWM, and timing functions
+    \end{itemize}
+
+    \item \textbf{Standard Arduino Functions:}
+    \begin{itemize}
+        \item \texttt{analogRead()} for flame sensors
+        \item \texttt{digitalWrite()} for relay and motor control
+        \item \texttt{pulseIn()} for ultrasonic distance measurement
+    \end{itemize}
+
+    \item \textbf{Optional:}
+    \begin{itemize}
+        \item FreeRTOS (built into ESP32) for task scheduling
+        \item Signal filtering (e.g., moving average) for sensor stability
+    \end{itemize}
+\end{itemize}
+
 % --- 3.5 INTER-MODULE COMMUNICATION DESCRIPTION ---
 \section{Inter-Module Communication Description}
+
 The communication architecture relies on structured data exchange between hardware drivers and control logic.
 
-\begin{table}[h]
-\centering
-\footnotesize
-\begin{tabularx}{\textwidth}{l l l l l X}
-\toprule
-\textbf{From} & \textbf{To} & \textbf{Data / Signal} & \textbf{Type} & \textbf{Dir.} & \textbf{Notes} \\ \midrule
-MOD-01 & MOD-02 & \texttt{raw\_adc\_values} & \texttt{uint16\_t[]} & $01 \to 02$ & Raw IR intensity per sensor. \\
-MOD-02 & MOD-07 & \texttt{flame\_data\_t} & \texttt{struct} & $02 \to 07$ & Direction enum and intensity proxy for distance. \\
-MOD-05 & MOD-07 & \texttt{distance\_mm} & \texttt{uint16\_t} & $05 \to 07$ & Target distance; 20Hz update. \\
-MOD-07 & MOD-04 & \texttt{motion\_cmd\_t} & \texttt{struct} & $07 \to 04$ & Includes direction and speed. \\
-MOD-07 & MOD-06 & \texttt{pump\_active} & \texttt{bool} & $07 \to 06$ & Trigger for suppression relay. \\ \bottomrule
-\end{tabularx}
-\end{table}
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|p{5cm}|}
+\hline
+\textbf{From} & \textbf{To} & \textbf{Data / Signal} & \textbf{Type} & \textbf{Dir.} & \textbf{Notes} \\
+\hline
+
+MOD-01 & MOD-02 & raw\_data & uint16\_t[] & 01 $\rightarrow$ 02 & Raw IR intensity values from flame sensors. \\
+\hline
+
+MOD-02 & MOD-07 & direction & enum & 02 $\rightarrow$ 07 & LEFT, RIGHT, CENTER, NONE. \\
+\hline
+
+MOD-05 & MOD-07 & distance\_cm & uint16\_t & 05 $\rightarrow$ 07 & Target distance measurement from ultrasonic sensor. \\
+\hline
+
+MOD-07 & MOD-04 & motion\_cmd & struct & 07 $\rightarrow$ 04 & Contains direction and speed information. \\
+\hline
+
+MOD-04 & MOD-03 & pwm / direction & signal & 04 $\rightarrow$ 03 & Low-level motor control signals for locomotion. \\
+\hline
+
+MOD-07 & MOD-06 & pump\_cmd & bool & 07 $\rightarrow$ 06 & Activates water pump via relay. \\
+\hline
+
+MOD-08 & MOD-05 & simulate\_distance & signal & 08 $\rightarrow$ 05 & Simulated distance input for testing. \\
+\hline
+
+MOD-08 & MOD-02 & simulate\_input & signal & 08 $\rightarrow$ 02 & Simulated flame sensor input. \\
+\hline
+
+MOD-08 & MOD-07 & test\_triggers & signal & 08 $\rightarrow$ 07 & Injected triggers for FSM testing. \\
+\hline
+
+\end{tabular}
+\end{center}
 
 % --- 3.6 KNOWN RISKS ---
 \section{Known Risks \& Open Questions}
