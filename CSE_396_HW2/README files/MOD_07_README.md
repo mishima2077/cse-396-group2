@@ -1,32 +1,74 @@
-# MOD_07 Decision and Autonomy Software
+# MOD_07 — Decision and Autonomy Software
 
 ## Purpose
-The central logic module that implements the Finite State Machine (FSM) to coordinate searching, approaching, and extinguishing the fire.
+
+Implements a Finite State Machine (FSM) to control searching, approaching, and extinguishing fire.
+
+---
 
 ## Author Information
-* **Ayşe Feyza SERBEST** - Student ID: [ID]
+
+* **Ayşe Feyza SERBEST** - Student ID: [220104004052]
+
+---
 
 ## Dependencies
-* **Internal**: MOD-01, MOD-02, MOD-04, MOD-05, MOD-06.
+
+* **MOD-01 (Flame HW)** → raw sensor readings
+* **MOD-02 (Flame SW)** → flame direction detection
+* **MOD-04 (Motion Control)** → movement commands
+* **MOD-05 (Distance Sensing)** → obstacle detection
+* **MOD-06 (Fire Suppression)** → pump control
+
+---
 
 ## Quick-start Integration
+
 ```c
 #include "autonomy_sw.h"
 
+void setup() {
+    autonomy_init();
+}
+
 void loop() {
-    autonomy_update(); // Run FSM logic
+    autonomy_update();
 }
 ```
 
+---
+
 ## API Summary
+
 | Function | Parameters | Return Value | Description |
 | :--- | :--- | :--- | :--- |
-| `autonomy_update` | `void` | `void` | Evaluates system state and triggers actions in other modules. |
-| `autonomy_get_current_state` | `void` | `autonomy_state_t` | Returns the current active state in the FSM. |
+| `autonomy_init` | `void` | `void` | Initializes the FSM and sets the initial state |
+| `autonomy_update` | `const autonomy_input_t *in` | `void` | Processes input data and updates FSM state |
+| `autonomy_get_output` | `autonomy_output_t *out` | `void` | Returns current motion and actuator commands |
+| `autonomy_get_current_state` | `void` | `autonomy_state_t` | Returns the current FSM state |
+| `autonomy_reset` | `void` | `void` | Resets FSM to initial state |
+| `autonomy_state_to_string` | `autonomy_state_t state` | `const char*` | Converts state enum to readable string for debugging |
+
+---
 
 ## Known Limitations and TODOs
-* **Limitation**: The FSM is currently linear; it does not handle recovery from lost flame signals well.
-* **TODO**: Add a "Lost Target" state for 360-degree searching.
+
+### Limitations
+
+* FSM is linear and does not handle complex recovery scenarios
+* No handling of lost flame signal
+* No filtering for noisy sensor data
+
+### TODOs
+
+* Add `STATE_LOST_TARGET` for flame loss handling
+* Implement obstacle-aware navigation
+* Add speed control based on distance
+* Introduce timeout mechanism for states
+
+---
 
 ## Version History
-* **v0.1 (2026-03-28)**: Basic state transitions defined.
+
+* **v0.1 (2026-03-28)**: Initial FSM structure and state transitions
+* **v0.2 (planned)**: Improved state handling and robustness
