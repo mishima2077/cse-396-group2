@@ -15,11 +15,9 @@ Reads three IR flame sensors mounted on the rover's front face and exposes the d
 
 ## Dependencies
 
-| Dependency | Type | Notes |
-|-----------|------|-------|
-| `<stdint.h>` | System | Standard integer types |
-| Arduino core / ESP32 Arduino | External SDK | `analogRead()`, `millis()` |
-| `fire_suppression.h` | None (consumer only) | Suppression module consumes this module's output via MOD-4 |
+* **MOD-01 (Flame HW)** → raw sensor readings
+* **MOD-07 (Autonomy SW)** → consumes this module's output (`flame_data_t`) structure
+* **Arduino core / ESP32** → standard types, `analogRead()`, and `millis()`
 
 ---
 

@@ -32,7 +32,7 @@
         Görkem UYSAL & 230104004174 & MOD-07, MOD-08 \\
         Cemal GÜMÜŞ & 210104004304 & MOD-01, MOD-03 \\
         Melih KAZANCI & 230104004909 & MOD-01, MOD-03 \\
-        Ahmet Halil YAMLI & [ID] & MOD-04, MOD-05 \\
+        Ahmet Halil YAMLI & 220104004957 & MOD-04, MOD-05 \\
         Derya UYSAL & 220104004045 & MOD-04, MOD-05 \\
         Mehmet Alp ATAY & 220104004020 & MOD-02, MOD-06 \\
         Adil Mert ERGÖRÜN & 220104004048 & MOD-02, MOD-06 \\
@@ -170,128 +170,17 @@ The system is built around a low-cost embedded platform suitable for real-time s
         \item Supplies motors and pump
         \item Regulated output for MCU and sensors
     \end{itemize}
-\end{itemize}
-
-\subsection{Communication Buses Used}
-
-The system uses simple embedded communication mechanisms:
-
-\begin{itemize}
-    \item \textbf{GPIO (Digital I/O):}
+    \item \textbf{Distance Sensor (MOD-05):} HC-SR04 Ultrasonic sensor
     \begin{itemize}
-        \item Flame sensor digital outputs
-        \item Relay control signal
-        \item Motor direction control
+        \item Provides real-time distance measurements for navigation and safety
+        \item Uses digital trigger and echo pins
     \end{itemize}
 
-    \item \textbf{ADC (Analog-to-Digital Converter):}
+    \item \textbf{Fire Suppression (MOD-06):} DC water pump
     \begin{itemize}
-        \item Flame sensor analog outputs for intensity comparison
-    \end{itemize}
-
-    \item \textbf{PWM (Pulse Width Modulation):}
-    \begin{itemize}
-        \item Motor speed control via motor driver
-    \end{itemize}
-
-\end{itemize}
-
-No high-level communication buses such as I2C, SPI, or CAN are required in the current design.
-
-\subsection{Clock Frequencies and Voltage Levels}
-
-\begin{itemize}
-    \item \textbf{MCU Clock Frequency:}
-    \begin{itemize}
-        \item ESP32 operates up to 240 MHz
-    \end{itemize}
-
-    \item \textbf{Operating Voltage Levels:}
-    \begin{itemize}
-        \item ESP32 logic level: 3.3V
-        \item Sensors (KY-026): 5V
-        \item Motor driver and motors: 7.4V (battery supply)
-    \end{itemize}
-
-    \item \textbf{Level Compatibility:}
-    \begin{itemize}
-        \item Voltage differences are handled using compatible inputs or simple level shifting when required
-    \end{itemize}
-\end{itemize}
-
-\subsection{External Libraries and SDKs}
-
-\begin{itemize}
-    \item \textbf{Arduino Core for ESP32}
-    \begin{itemize}
-        \item Provides abstraction for GPIO, ADC, PWM, and timing functions
-    \end{itemize}
-
-    \item \textbf{Standard Arduino Functions:}
-    \begin{itemize}
-        \item \texttt{analogRead()} for flame sensors
-        \item \texttt{digitalWrite()} for relay and motor control
-        \item \texttt{pulseIn()} for ultrasonic distance measurement
-    \end{itemize}
-
-    \item \textbf{Optional:}
-    \begin{itemize}
-        \item FreeRTOS (built into ESP32) for task scheduling
-        \item Signal filtering (e.g., moving average) for sensor stability
-    \end{itemize}
-\end{itemize}
-
-\subsection{Overall System Architecture}
-\begin{itemize}
-\item The proposed system follows a centralized embedded architecture based on a single microcontroller unit (MCU). An ESP32 DevKit V1 is used as the main processing unit, responsible for coordinating all sensing, decision-making, and actuation tasks.
-
-\item All hardware modules are directly interfaced with the MCU. Flame sensors (MOD-01) and the ultrasonic distance sensor (MOD-05) provide real-time environmental data through analog and digital inputs. This data is processed within the MCU to determine the system state and appropriate actions using a finite state machine.
-
-\item The locomotion module (MOD-03) and fire suppression module (MOD-06) act as output subsystems. The MCU generates control signals such as PWM for motor speed and digital signals for relay activation. These signals are used to drive the motors via the motor driver and to control the water pump for fire extinguishing.
-
-\item The system does not rely on an external host computer or FPGA. All computation is performed on the embedded platform, ensuring real-time responsiveness and system autonomy. The architecture is designed to be modular, allowing independent development and testing of submodules while maintaining a clear and structured integration through the central controller.
-\end{itemize}
-
-\section{Hardware \& Platform Summary}
-
-\subsection{Target Hardware}
-
-The system is built around a low-cost embedded platform suitable for real-time sensing and control.
-
-\begin{itemize}
-    \item \textbf{Microcontroller (MCU):} ESP32 DevKit V1
-    \begin{itemize}
-        \item Dual-core processor up to 240 MHz
-        \item Integrated Wi-Fi and Bluetooth
-        \item 12-bit ADC for analog sensor input
-    \end{itemize}
-
-    \item \textbf{Flame Sensors (MOD-01):} 3× KY-026 Flame Sensor Module
-    \begin{itemize}
-        \item Infrared-based flame detection
-        \item Provides both analog (intensity) and digital (threshold) outputs
-        \item Used for directional fire localization (left, center, right)
-    \end{itemize}
-
-    \item \textbf{Motor Driver (MOD-03):} L298N Motor Driver Module
-    \begin{itemize}
-        \item Dual H-bridge motor driver
-        \item Controls two DC motors for differential drive
-    \end{itemize}
-
-    \item \textbf{Locomotion Platform:} Custom Robot Car Chassis
-    \begin{itemize}
-        \item Placed onto a custom designed platform
-        \item Includes two DC gear motors and wheels
-        \item Enables differential drive navigation
-    \end{itemize}
-
-    \item \textbf{Power Supply:} 7.4V LiPo Battery Pack
-    \begin{itemize}
-        \item Supplies motors and pump
-        \item Regulated output for MCU and sensors
-    \end{itemize}
-\end{itemize}
+        \item Activated to extinguish detected fires
+        \item Switched via an external relay module
+    \end{itemize}\end{itemize}
 
 \subsection{Communication Buses Used}
 
@@ -376,25 +265,25 @@ The communication architecture relies on structured data exchange between hardwa
 MOD-01 & MOD-02 & raw\_data & uint16\_t[] & 01 $\rightarrow$ 02 & Raw IR intensity values from flame sensors. \\
 \hline
 
-MOD-02 & MOD-07 & direction & enum & 02 $\rightarrow$ 07 & LEFT, RIGHT, CENTER, NONE. \\
+MOD-02 & MOD-07 & flame\_data & struct & 02 $\rightarrow$ 07 & \texttt{flame\_data\_t} array of max intensity, raw ADC and direction (\texttt{flame\_direction\_t}). \\
 \hline
 
-MOD-05 & MOD-07 & distance\_cm & uint16\_t & 05 $\rightarrow$ 07 & Target distance measurement from ultrasonic sensor. \\
+MOD-05 & MOD-07 & dist\_reading & struct & 05 $\rightarrow$ 07 & \texttt{dist\_reading\_t} distance measurement and timestamp. \\
 \hline
 
-MOD-07 & MOD-04 & motion\_cmd & struct & 07 $\rightarrow$ 04 & Contains direction and speed information. \\
+MOD-07 & MOD-04 & motion\_cmd & struct & 07 $\rightarrow$ 04 & Contains direction (\texttt{motion\_direction\_t}) and speed. \\
 \hline
 
 MOD-04 & MOD-03 & pwm / direction & signal & 04 $\rightarrow$ 03 & Low-level motor control signals for locomotion. \\
 \hline
 
-MOD-07 & MOD-06 & pump\_cmd & bool & 07 $\rightarrow$ 06 & Activates water pump via relay. \\
+MOD-07 & MOD-06 & suppression\_cmd & struct & 07 $\rightarrow$ 06 & \texttt{suppression\_cmd\_t} activates water pump with duration. \\
 \hline
 
-MOD-08 & MOD-05 & simulate\_distance & signal & 08 $\rightarrow$ 05 & Simulated distance input for testing. \\
+MOD-08 & MOD-05 & simulate\_dist & signal & 08 $\rightarrow$ 05 & \texttt{sys\_test\_input\_t} simulated distance input for testing. \\
 \hline
 
-MOD-08 & MOD-02 & simulate\_input & signal & 08 $\rightarrow$ 02 & Simulated flame sensor input. \\
+MOD-08 & MOD-02 & simulate\_flame & signal & 08 $\rightarrow$ 02 & \texttt{sys\_test\_input\_t} simulated flame sensor input. \\
 \hline
 
 MOD-08 & MOD-07 & test\_triggers & signal & 08 $\rightarrow$ 07 & Injected triggers for FSM testing. \\

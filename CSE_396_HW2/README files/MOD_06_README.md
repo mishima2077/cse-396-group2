@@ -15,11 +15,9 @@ Controls the relay-driven water pump and nozzle that extinguishes detected flame
 
 ## Dependencies
 
-| Dependency | Type | Notes |
-|-----------|------|-------|
-| `<stdint.h>` | System | Standard integer types |
-| Arduino core / ESP32 Arduino | External SDK | `digitalWrite()`, `millis()` |
-| Control & Decision Module (MOD-4) | Consumer | Issues `suppression_cmd_t` commands to this module |
+* **Hardware**: DC water pump and external relay module
+* **MOD-07 (Autonomy SW)** → issues `suppression_cmd_t` commands to this control module
+* **Arduino core / ESP32** → standard types, `digitalWrite()`, and `millis()`
 
 ---
 
