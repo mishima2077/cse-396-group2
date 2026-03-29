@@ -10,7 +10,7 @@ The repository for the CSE 396 Computer Engineering Project. This repository con
 ## For Collaborators
 1. **Cloning the repository**:
    ```bash
-   git clone <your-github-repo-url>
+   git clone https://github.com/mishima2077/cse-396-group2
    ```
 
 2. **Branching**:
