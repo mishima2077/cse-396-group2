@@ -68,4 +68,4 @@ void loop() {
 ## Version History
 
 * **v0.1 (2026-03-28)**: Initial FSM structure and state transitions
-* **v0.2 (planned)**: Improved state handling and robustness
+* **v0.2 (2026-03-29)**: Improved state handling and robustness

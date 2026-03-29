@@ -80,4 +80,4 @@ void loop() {
 ## Version History
 
 * **v0.1 (2026-03-28)**: Initial self-check and simulation functions
-* **v0.2 (planned)**: Enhanced reporting and advanced simulation support
+* **v0.2 (2026-03-29)**: Enhanced reporting and advanced simulation support
