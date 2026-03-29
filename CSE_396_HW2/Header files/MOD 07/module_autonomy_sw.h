@@ -3,10 +3,11 @@
 
 /**
  * @file module_autonomy_sw.h
- * @brief Central FSM and decision logic
- * @version 0.2
- * @author Ayşe Feyza SERBEST 220104004052
+ * @brief Autonomy SW (MOD-07) – public interface
+ * @author Ayşe Feyza SERBEST - 220104004052
+ *         Görkem UYSAL - 230104004174
  * @date 2026-03-29
+ * @version 0.2
  *
  * Changelog:
  * v0.1 - Initial version
@@ -14,6 +15,8 @@
  */
 
 #include <stdint.h>
+#include "../MOD 02/flame_detection.h"
+#include "../MOD 04/motion.h"
 
 /* ---------- STATE ---------- */
 typedef enum {
@@ -28,16 +31,15 @@ typedef enum {
 
 /* ---------- INPUT ---------- */
 typedef struct {
-    int flame_dir;          // LEFT / CENTER / RIGHT
+    flame_data_t flame_data;        // Contains raw ADC, direction, max_intensity, etc.
     uint16_t distance_cm;
-    int flame_detected;
 } autonomy_input_t;
 
 /* ---------- OUTPUT ---------- */
 typedef struct {
-    int motion_cmd;         // FORWARD / TURN etc.
-    int speed;
-    int pump_on;
+    motion_direction_t motion_cmd;  // FORWARD / TURN etc.
+    uint8_t speed;                  // PWM value
+    uint8_t pump_on;                // 1 if active, 0 if idle
 } autonomy_output_t;
 
 /* ---------- API ---------- */

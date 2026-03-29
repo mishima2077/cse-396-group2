@@ -1,10 +1,10 @@
-# FIRE_SUPPRESSION — Fire Suppression Module
+# FIRE_SUPPRESSION — Suppression Hardware Module (MOD-06)
 
 Controls the relay-driven water pump and nozzle that extinguishes detected flames when the rover reaches the safe suppression distance.
 
 ---
 
-## Author
+## Authors
 
 | Name              | Student ID       |
 |-------------------|------------------|

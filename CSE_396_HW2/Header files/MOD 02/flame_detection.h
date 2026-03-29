@@ -3,9 +3,9 @@
 
 /**
  * @file    flame_detection.h
- * @brief   Flame Detection Module – public interface
- * @author  Adil Mert Ergörün - 220104004048
- *          Mehmet Alp Atay - 220104004020
+ * @brief   Flame Detection Software Module (MOD-02) – public interface
+ * @author  Mehmet Alp ATAY - 220104004020
+ *          Adil Mert ERGÖRÜN - 220104004048
  * @date    2026-03-28
  * @version 0.1
  *
@@ -15,16 +15,17 @@
  */
 
 #include <stdint.h>
+#include "../MOD 01/flame_hw.h"
 
 /* ---------------------------------------------------------------
  * Constants & Macros
  * --------------------------------------------------------------- */
 
 /** Number of IR flame sensor modules on the rover front. */
-#define FLAME_SENSOR_COUNT       3
+#define FLAME_SENSOR_COUNT       FLAME_HW_SENSOR_COUNT
 
 /** ADC threshold above which a sensor is considered to detect flame. */
-#define FLAME_THRESHOLD          500
+#define FLAME_THRESHOLD          FLAME_HW_THRESHOLD_DEFAULT
 
 /** Sampling interval in milliseconds. */
 #define FLAME_SAMPLE_INTERVAL_MS 50

@@ -1,16 +1,17 @@
-# MOD_04 Motion Control Software
+# MOD-04 — Motion Control SW
 
 ## Purpose
-This module is responsible for the differential drive system, providing forward/backward/turn logic, speed control, and basic motion testing to navigate the rover toward target flames.
+Provides the differential drive system, offering forward/backward/turn logic and speed control to navigate the rover toward target flames.
 
-## Author Information
-* **Cemal GÜMÜŞ** - Student ID: [ID]
-* **Ahmet Halil YAMLI** - Student ID: [ID]
-* **Derya UYSAL** - Student ID: [ID]
+## Authors
+| Name              | Student ID       |
+|-------------------|------------------|
+| Ahmet Halil YAMLI | [ID]             |
+| Derya UYSAL       | 220104004045     |
 
 ## Dependencies
 * **Standard C Libraries:** `<stdint.h>`
-* **Hardware Drivers:** Requires GPIO and PWM initialization for the L298N motor driver
+* **Hardware Drivers:** Locomotion HW (MOD-03) `locomotion_hw.h`
 * **External Modules:** None (Primary actuator driver)
 
 ## Quick-start Integration

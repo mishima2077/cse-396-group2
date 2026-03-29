@@ -3,9 +3,9 @@
 
 /**
  * @file    fire_suppression.h
- * @brief   Fire Suppression Module – public interface
- * @author  Adil Mert Ergörün - 220104004048
- *          Mehmet Alp Atay - 220104004020
+ * @brief   Suppression Hardware Module (MOD-06) – public interface
+ * @author  Mehmet Alp ATAY - 220104004020
+ *          Adil Mert ERGÖRÜN - 220104004048
  * @date    2026-03-28
  * @version 0.1
  *

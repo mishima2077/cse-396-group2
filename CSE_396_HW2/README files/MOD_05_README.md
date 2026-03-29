@@ -1,13 +1,18 @@
-# MOD_05 Obstacle and Distance Sensing
+# MOD-05 — Dist. Sensing
 
 ## Purpose
 This module integrates the HC-SR04 ultrasonic sensor to measure distances and provide safety thresholds for the rover's autonomous movement.
 
-## Author Information
-* **Ahmet Halil YAMLI** - Student ID: [ID]
-* **Derya UYSAL** - Student ID: [ID]
-* **Mehmet Alp ATAY** - Student ID: [ID]
-* **Adil Mert ERGÖRÜN** - Student ID: [ID]
+---
+
+## Authors
+
+| Name              | Student ID       |
+|-------------------|------------------|
+| Ahmet Halil YAMLI | [ID]             |
+| Derya UYSAL       | 220104004045     |
+
+---
 
 ## Dependencies
 * **Hardware**: HC-SR04 Ultrasonic sensor.

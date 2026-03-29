@@ -2,11 +2,12 @@
 #define MODULE_SYSTEM_TEST_H
 
 /**
- * @file system_test.h
- * @brief Validation and end-to-end testing routines
- * @version 0.2
- * @author Ayşe Feyza SERBEST 220104004052
+ * @file module_system_test.h
+ * @brief Integration/Test (MOD-08) – public interface
+ * @author Ayşe Feyza SERBEST - 220104004052
+ *         Görkem UYSAL - 230104004174
  * @date 2026-03-29
+ * @version 0.2
  *
  * Changelog:
  * v0.1 - Initial test functions
@@ -14,6 +15,7 @@
  */
 
 #include <stdint.h>
+#include "../MOD 02/flame_detection.h"
 
 /* ---------- TEST STATUS ---------- */
 typedef enum {
@@ -40,7 +42,7 @@ typedef struct {
 
 /* ---------- SIMULATION INPUT ---------- */
 typedef struct {
-    int flame_dir;
+    flame_data_t flame_data;
     uint16_t distance_cm;
 } test_simulation_input_t;
 

@@ -1,22 +1,19 @@
-# MOD_07 — Decision and Autonomy Software
+# MOD-07 — Autonomy SW
 
 ## Purpose
-
 Implements a Finite State Machine (FSM) to control searching, approaching, and extinguishing fire.
 
----
-
-## Author Information
-
-* **Ayşe Feyza SERBEST** - Student ID: [220104004052]
-
----
+## Authors
+| Name              | Student ID       |
+|-------------------|------------------|
+| Ayşe Feyza SERBEST| 220104004052     |
+| Görkem UYSAL      | 230104004174     |
 
 ## Dependencies
 
 * **MOD-01 (Flame HW)** → raw sensor readings
-* **MOD-02 (Flame SW)** → flame direction detection
-* **MOD-04 (Motion Control)** → movement commands
+* **MOD-02 (Flame Detect. SW)** → flame structure (`flame_data_t`) including intensity and direction
+* **MOD-04 (Motion Control)** → movement commands using `motion_direction_t`
 * **MOD-05 (Distance Sensing)** → obstacle detection
 * **MOD-06 (Fire Suppression)** → pump control
 

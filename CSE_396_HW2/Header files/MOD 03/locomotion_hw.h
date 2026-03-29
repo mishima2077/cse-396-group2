@@ -1,10 +1,12 @@
 /**
  * @file locomotion_hw.h
- * @brief Low-level driver for DC motors and L298N motor controller hardware.
- * @author Cemal G., Melih K.
+ * @brief Locomotion HW (MOD-03) – public interface
+ * @author Cemal GÜMÜŞ - 210104004304
+ *         Melih KAZANCI - 230104004909
  * @date 2026-03-28
  * @version 0.1
- * * Changelog:
+ *
+ * Changelog:
  * v0.1 (2026-03-28)
  * - Initial draft; defined pin-level control functions for L298N integration.
  */

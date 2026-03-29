@@ -1,7 +1,8 @@
 /**
  * @file distance_sensing.h
- * @brief Interface for HC-SR04 ultrasonic sensor and threshold detection.
- * @author Ahmet Halil Y., Derya U.
+ * @brief Dist. Sensing (MOD-05) – public interface
+ * @author Ahmet Halil YAMLI - 220104004957
+ *         Derya UYSAL - 220104004045
  * @date 2026-03-28
  * @version 0.1
  */

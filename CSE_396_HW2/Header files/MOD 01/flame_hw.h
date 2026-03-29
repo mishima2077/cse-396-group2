@@ -1,7 +1,8 @@
 /**
  * @file flame_hw.h
- * @brief Driver for infrared flame sensor mounting and wiring.
- * @author Görkem UYSAL ([ID])
+ * @brief Flame Sensing HW (MOD-01) – public interface
+ * @author Cemal GÜMÜŞ - 210104004304
+ *         Melih KAZANCI - 230104004909
  * @date 2026-03-28
  * @version 0.1
  */

@@ -1,4 +1,4 @@
-# MOD_08 — System Integration and Testing
+# MOD-08 — Integration/Test
 
 ## Purpose
 
@@ -6,18 +6,21 @@ Provides validation, self-check, and end-to-end testing routines to ensure all s
 
 ---
 
-## Author Information
+## Authors
 
-* **Ayşe Feyza SERBEST** - Student ID: [220104004052]
+| Name              | Student ID       |
+|-------------------|------------------|
+| Ayşe Feyza SERBEST| 220104004052     |
+| Görkem UYSAL      | 230104004174     |
 
 ---
 
 ## Dependencies
 
 * **MOD-01 (Flame HW)** → sensor validation
-* **MOD-02 (Flame SW)** → detection verification
+* **MOD-02 (Flame Detect. SW)** → full detection verification via `flame_data_t`
 * **MOD-03 (Locomotion HW)** → motor testing
-* **MOD-04 (Motion Control)** → movement verification
+* **MOD-04 (Motion Control)** → movement verification via `motion_direction_t`
 * **MOD-05 (Distance Sensing)** → obstacle detection validation
 * **MOD-06 (Fire Suppression)** → pump testing
 * **MOD-07 (Autonomy)** → full system behavior testing

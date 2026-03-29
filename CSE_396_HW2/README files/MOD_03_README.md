@@ -1,11 +1,18 @@
-# MOD_03 Locomotion Hardware
+# MOD-03 — Locomotion HW
 
 ## Purpose
 This module manages the physical chassis assembly, motor driver wiring, and battery integration to provide low-level control of the rover's wheels.
 
-## Author Information
-* **Cemal GÜMÜŞ** - Student ID: [ID]
-* **Melih KAZANCI** - Student ID: 230104004909
+---
+
+## Authors
+
+| Name              | Student ID       |
+|-------------------|------------------|
+| Cemal GÜMÜŞ       | 210104004304     |
+| Melih KAZANCI     | 230104004909     |
+
+---
 
 ## Dependencies
 * **Hardware**: L298N Motor Driver, DC Motors, and LiPo Battery.

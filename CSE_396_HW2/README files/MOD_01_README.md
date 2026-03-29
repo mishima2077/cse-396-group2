@@ -1,10 +1,18 @@
-# MOD_01 Flame Sensing Hardware
+# MOD-01 — Flame Sensing HW
 
 ## Purpose
 This module involves the selection, mounting, and wiring of flame sensors to reduce ambient light noise and provide clean signal inputs for detection software.
 
-## Author Information
-* **Görkem UYSAL** - Student ID: [ID]
+---
+
+## Authors
+
+| Name              | Student ID       |
+|-------------------|------------------|
+| Cemal GÜMÜŞ       | 210104004304     |
+| Melih KAZANCI     | 230104004909     |
+
+---
 
 ## Dependencies
 * **Hardware**: Infrared flame sensor modules, Analog-to-Digital Converter (ADC) pins on the MCU.

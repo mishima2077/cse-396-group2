@@ -1,10 +1,12 @@
 /**
  * @file motion_control.h
- * @brief Differential drive logic and motor speed control for the rover.
- * @author Ahmet Halil Y., Derya U.
+ * @brief Motion Control SW (MOD-04) – public interface
+ * @author Ahmet Halil YAMLI - 220104004957
+ *         Derya UYSAL - 220104004045
  * @date 2026-03-28
  * @version 0.1
- * * Changelog:
+ *
+ * Changelog:
  * v0.1 (2026-03-28)
  * - Initial draft with basic movement logic and differential drive support.
  */
@@ -13,6 +15,7 @@
 #define MODULE_MOTION_CONTROL_H
 
 #include <stdint.h>
+#include "../MOD 03/locomotion_hw.h"
 
 /* -- Constants ----------------------------------------------------------- */
 
@@ -20,7 +23,7 @@
 #define MOTION_DEFAULT_SPEED 150
 
 /** @brief Minimum PWM value required to overcome static friction */
-#define MOTION_MIN_THRESHOLD 50
+#define MOTION_MIN_THRESHOLD LOCO_HW_MIN_PWM
 
 /* -- Data Types ---------------------------------------------------------- */
 

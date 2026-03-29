@@ -1,4 +1,4 @@
-# FLAME_DETECTION — Flame Detection Module
+# FLAME_DETECTION — Flame Detection Software Module (MOD-02)
 
 Reads three IR flame sensors mounted on the rover's front face and exposes the detected flame direction and intensity to the Control & Decision module.
 
