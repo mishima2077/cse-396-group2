@@ -1,0 +1,406 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{parskip}
+\usepackage{listings}
+\usepackage{mdframed}
+\usepackage{enumitem}
+\usepackage{amsmath}
+
+\definecolor{headerblue}{HTML}{1F5C99}
+\definecolor{codeblue}{HTML}{E8F0FA}
+\definecolor{warnorange}{HTML}{FFF3CD}
+\definecolor{warnborder}{HTML}{C47A00}
+\definecolor{notebg}{HTML}{EAF4EA}
+\definecolor{noteborder}{HTML}{2E7D32}
+\definecolor{darkgray}{HTML}{333333}
+
+\newcommand{\fn}[1]{{\footnotesize\ttfamily #1}}
+\newcommand{\sectionrule}{%
+  \vspace{2pt}{\color{headerblue}\rule{\linewidth}{1.5pt}}\vspace{6pt}}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\lstset{
+  language=C,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=\color{headerblue}\bfseries,
+  commentstyle=\color{gray}\itshape,
+  backgroundcolor=\color{codeblue},
+  frame=single, framerule=0.5pt,
+  rulecolor=\color{headerblue!40},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=8pt,
+  breaklines=true, showstringspaces=false, tabsize=4, captionpos=b,
+}
+
+\newmdenv[backgroundcolor=warnorange, linecolor=warnborder, linewidth=1.2pt,
+  innerleftmargin=10pt, innerrightmargin=10pt,
+  innertopmargin=6pt, innerbottommargin=6pt]{warnbox}
+
+\newmdenv[backgroundcolor=notebg, linecolor=noteborder, linewidth=1.2pt,
+  innerleftmargin=10pt, innerrightmargin=10pt,
+  innertopmargin=6pt, innerbottommargin=6pt]{notebox}
+
+\hypersetup{colorlinks=true, linkcolor=headerblue, urlcolor=headerblue,
+            pdftitle={MOD-02 Flame Detection SW -- Detailed Technical Reference}}
+
+% ════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── COVER PAGE ───────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{0.5in}
+  {\Huge\bfseries CSE 396 --- Computer Engineering Project}\\[0.4in]
+  {\huge\bfseries MOD-02: Flame Detection Software}\\[0.2in]
+  {\Large Detailed Technical Reference}\\[0.6in]
+  {\large\bfseries Responsible Authors:}\\[0.2in]
+  \begin{tabular}{ll}
+    \textbf{Name}              & \textbf{Student ID} \\ \midrule
+    Mehmet Alp ATAY   & 220104004020 \\
+    Adil Mert ERGORUN & 220104004048 \\
+  \end{tabular}\\[0.8in]
+  {\large Autonomous Fire Detection and Suppression Rover\\Group 2}\\[0.3in]
+  {\large Version 0.1 \quad--\quad April 2026}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Module Overview}
+\sectionrule
+
+MOD-02 is the software layer that reads raw ADC values from MOD-01 (Flame Sensing HW) and produces structured, semantically meaningful flame detection results consumed by the Autonomy FSM (MOD-07). It is the only module that knows the \emph{meaning} of IR sensor readings: it applies thresholding, determines which sensor is dominant, and assigns a directional label.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{2.8cm} L{3cm} X}
+\toprule
+\textbf{Direction} & \textbf{Module} & \textbf{Interface} \\
+\midrule
+Upstream (input)    & MOD-01 Flame HW  & \fn{flame\_hw\_read\_raw(uint16\_t *buffer)} -- populates \fn{raw[3]} \\
+Downstream (output) & MOD-07 Autonomy  & \fn{flame\_data\_t} via \fn{flame\_read()} or callback \\
+\bottomrule
+\end{tabularx}
+\caption{MOD-02 inter-module connections}
+\end{table}
+
+\textbf{Header file:} \fn{CSE\_396\_HW2/Header\ files/MOD\ 02/flame\_detection.h}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Constants \& Macros}
+\sectionrule
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{5cm} L{2cm} X}
+\toprule
+\textbf{Macro} & \textbf{Value} & \textbf{Rationale} \\
+\midrule
+\fn{FLAME\_SENSOR\_COUNT}        & \fn{3}    & Three KY-026 IR sensors mounted left, center, right. Mirrors \fn{FLAME\_HW\_SENSOR\_COUNT} from MOD-01. \\
+\fn{FLAME\_THRESHOLD}            & \fn{500}  & ADC reading (0--1023) above which a sensor is considered to be detecting a flame. Must be validated experimentally in the target environment. \\
+\fn{FLAME\_SAMPLE\_INTERVAL\_MS} & \fn{50}   & Sampling period in milliseconds (20~Hz). Chosen as a balance between responsiveness and CPU load on the ESP32. \\
+\fn{FLAME\_ADC\_MAX}             & \fn{1023} & Full-scale value of the 10-bit ADC on the ESP32. Used for normalisation if needed. \\
+\bottomrule
+\end{tabularx}
+\caption{MOD-02 constants and their rationale}
+\end{table}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Data Types}
+\sectionrule
+
+\subsection{\fn{flame\_status\_t} --- Return / Error Codes}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{4.5cm} C{1cm} X}
+\toprule
+\textbf{Enumerator} & \textbf{Value} & \textbf{Meaning \& when returned} \\
+\midrule
+\fn{FLAME\_OK}              & \fn{0}  & Operation completed successfully. Returned by all functions on the happy path. \\
+\fn{FLAME\_ERR\_INIT}       & \fn{-1} & Hardware initialisation failed. Returned by \fn{flame\_init()} when MOD-01's \fn{flame\_hw\_init()} reports an ADC configuration error. The module must not be used until a successful re-initialisation. \\
+\fn{FLAME\_ERR\_NO\_SENSOR} & \fn{-2} & One or more sensors not responding. Indicates that at least one ADC channel returns 0 or 1023 persistently, suggesting a wiring or hardware fault. \\
+\fn{FLAME\_ERR\_TIMEOUT}    & \fn{-3} & Returned by \fn{flame\_read()} when no new sample has been produced yet (e.g.\ first call before the first sampling cycle completes). \\
+\bottomrule
+\end{tabularx}
+\caption{\fn{flame\_status\_t} enumerator definitions}
+\end{table}
+
+\subsection{\fn{flame\_direction\_t} --- Detected Flame Direction}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{4cm} C{1cm} X}
+\toprule
+\textbf{Enumerator} & \textbf{Value} & \textbf{Meaning} \\
+\midrule
+\fn{FLAME\_DIR\_NONE}   & \fn{0} & No sensor exceeded \fn{FLAME\_THRESHOLD}; no flame detected. Rover should remain in \fn{STATE\_SEARCH}. \\
+\fn{FLAME\_DIR\_LEFT}   & \fn{1} & Left sensor (\fn{raw[0]}) has the highest reading above threshold. Rover should turn left. \\
+\fn{FLAME\_DIR\_CENTER} & \fn{2} & Center sensor (\fn{raw[1]}) has the highest reading. Rover is aligned; advance forward. \\
+\fn{FLAME\_DIR\_RIGHT}  & \fn{3} & Right sensor (\fn{raw[2]}) has the highest reading. Rover should turn right. \\
+\bottomrule
+\end{tabularx}
+\caption{\fn{flame\_direction\_t} enumerator definitions}
+\end{table}
+
+\begin{notebox}
+\textbf{Direction logic:} The direction is the sensor with the \emph{highest} ADC reading, provided that reading exceeds \fn{FLAME\_THRESHOLD}. Tie-breaking priority: center $>$ left $>$ right. If no sensor exceeds the threshold, direction is \fn{FLAME\_DIR\_NONE} regardless of relative values.
+\end{notebox}
+
+\subsection{\fn{flame\_data\_t} --- Aggregated Sensor Reading}
+
+This is the primary struct shared with MOD-07. It is populated on every sampling cycle.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.8cm} L{2.5cm} L{2cm} X}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Range} & \textbf{Description} \\
+\midrule
+\fn{raw[FLAME\_SENSOR\_COUNT]} & \fn{uint16\_t[3]} & 0--1023 & Raw 10-bit ADC readings. Index 0 = left, 1 = center, 2 = right. Updated every cycle. \\
+\fn{max\_intensity}  & \fn{uint16\_t}       & 0--1023       & Highest value among \fn{raw[0..2]}. Proxy for flame proximity: higher = closer or brighter. \\
+\fn{detected}        & \fn{uint8\_t}        & 0 or 1        & Non-zero if \fn{max\_intensity > FLAME\_THRESHOLD}. Primary flame-presence flag for MOD-07. \\
+\fn{direction}       & \fn{flame\_direction\_t} & enum      & Dominant direction derived from \fn{raw}. Only meaningful when \fn{detected == 1}. \\
+\fn{timestamp\_ms}   & \fn{uint32\_t}       & ms since boot & Time of reading via \fn{millis()}. MOD-07 should reject data older than 100~ms. \\
+\bottomrule
+\end{tabularx}
+\caption{\fn{flame\_data\_t} field descriptions}
+\end{table}
+
+\subsection{\fn{flame\_cb\_t} --- Sampling Callback}
+
+\begin{lstlisting}[caption={Callback typedef}]
+typedef void (*flame_cb_t)(const flame_data_t *data);
+\end{lstlisting}
+
+Invoked \emph{synchronously} at the end of each 50~ms sampling cycle with a read-only pointer to the freshly populated \fn{flame\_data\_t}.
+
+\begin{warnbox}
+\textbf{Thread-safety warning:} The callback runs inside the sampling loop. It must return quickly and must \textbf{not} call \fn{flame\_read()}, \fn{flame\_stop()}, or any blocking function. Blocking will stall the loop and cause missed readings.
+\end{warnbox}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Public API}
+\sectionrule
+
+\subsection{\fn{flame\_init()}}
+
+\begin{lstlisting}[caption={Signature}]
+flame_status_t flame_init(void);
+\end{lstlisting}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\textwidth}{L{3cm} X}
+\toprule
+Pre-condition  & None. Safe to call at any point, including after a failed init. \\
+Post-condition & On \fn{FLAME\_OK}: ADC pins configured, module ready. On error: state undefined; retry. \\
+Calls          & \fn{flame\_hw\_init()} from MOD-01. \\
+Returns        & \fn{FLAME\_OK} or \fn{FLAME\_ERR\_INIT}. \\
+Side effects   & Configures ESP32 ADC channels. Does \textbf{not} start sampling. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\fn{flame\_start()}}
+
+\begin{lstlisting}[caption={Signature}]
+flame_status_t flame_start(flame_cb_t cb);
+\end{lstlisting}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\textwidth}{L{3cm} X}
+\toprule
+Pre-condition  & \fn{flame\_init()} returned \fn{FLAME\_OK}. \\
+Parameters     & \fn{cb} -- callback per sample. Pass \fn{NULL} to use pull model only. \\
+Post-condition & 20~Hz sampling begins. Each cycle: reads ADC, computes direction, updates buffer, invokes \fn{cb} if set. \\
+Returns        & \fn{FLAME\_OK}. \\
+Side effects   & Starts repeating timer; consumes CPU proportional to sampling rate. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\fn{flame\_read()}}
+
+\begin{lstlisting}[caption={Signature}]
+flame_status_t flame_read(flame_data_t *out);
+\end{lstlisting}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\textwidth}{L{3cm} X}
+\toprule
+Pre-condition  & \fn{flame\_start()} called. \fn{out} points to valid \fn{flame\_data\_t} memory. \\
+Post-condition & \fn{*out} populated with the latest sample. \\
+Returns        & \fn{FLAME\_OK} if data available; \fn{FLAME\_ERR\_TIMEOUT} if no sample yet. \\
+Thread safety  & Safe to call from main loop while sampling runs. Single-core copy, no locking needed. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\fn{flame\_get\_direction()}}
+
+\begin{lstlisting}[caption={Signature}]
+flame_direction_t flame_get_direction(void);
+\end{lstlisting}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\textwidth}{L{3cm} X}
+\toprule
+Pre-condition  & At least one sampling cycle completed. \\
+Returns        & Current dominant direction. Returns \fn{FLAME\_DIR\_NONE} if no sample yet. \\
+Use case       & Lightweight FSM polling when only direction is needed. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\fn{flame\_stop()}}
+
+\begin{lstlisting}[caption={Signature}]
+void flame_stop(void);
+\end{lstlisting}
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\textwidth}{L{3cm} X}
+\toprule
+Pre-condition  & None. Safe to call even if not started. \\
+Post-condition & Sampling halted. Sensors powered down. Last sample retained in buffer. \\
+Side effects   & Pending callback cancelled. Must call \fn{flame\_init()} + \fn{flame\_start()} to resume. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Timing \& Sampling Behaviour}
+\sectionrule
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\textwidth}{L{5cm} X}
+\toprule
+\textbf{Parameter} & \textbf{Value / Notes} \\
+\midrule
+Sampling interval    & 50~ms (20~Hz) -- \fn{FLAME\_SAMPLE\_INTERVAL\_MS} \\
+ADC conversion time  & $\approx$~5~\textmu s per channel on ESP32; three channels $\approx$~15~\textmu s total, negligible vs.\ interval. \\
+Callback deadline    & Callback must return within $\ll$~50~ms to avoid missing the next cycle. \\
+Data staleness limit & MOD-07 should reject \fn{flame\_data\_t} with \fn{timestamp\_ms} older than 100~ms (2 missed cycles). \\
+\bottomrule
+\end{tabularx}
+\caption{MOD-02 timing parameters}
+\end{table}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Inter-Module Protocol: MOD-01 $\rightarrow$ MOD-02 $\rightarrow$ MOD-07}
+\sectionrule
+
+\begin{enumerate}[leftmargin=*, label=\textbf{Step \arabic*.}]
+  \item \textbf{Hardware read.} MOD-02 calls \fn{flame\_hw\_read\_raw(raw)} (MOD-01). Three 10-bit ADC values written into \fn{raw[0..2]}: left, center, right.
+  \item \textbf{Threshold check.} For each \fn{raw[i]}, compare to \fn{FLAME\_THRESHOLD = 500}.
+  \item \textbf{Max intensity.} \fn{max\_intensity = max(raw[0], raw[1], raw[2])}.
+  \item \textbf{Detection flag.} \fn{detected = (max\_intensity > FLAME\_THRESHOLD) ? 1 : 0}.
+  \item \textbf{Direction.} Index with highest \fn{raw[i]} exceeding threshold $\rightarrow$ \fn{0=LEFT, 1=CENTER, 2=RIGHT}. If none exceed threshold $\rightarrow$ \fn{FLAME\_DIR\_NONE}.
+  \item \textbf{Timestamp.} \fn{timestamp\_ms = millis()}.
+  \item \textbf{Publish.} Buffer updated. Callback invoked (if registered). MOD-07 calls \fn{flame\_read()} or reads callback arg.
+\end{enumerate}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Error Handling Guide}
+\sectionrule
+
+\begin{table}[H]\centering\small
+\begin{tabularx}{\textwidth}{L{4.5cm} X}
+\toprule
+\textbf{Error code} & \textbf{Recommended action} \\
+\midrule
+\fn{FLAME\_ERR\_INIT}       & Wait 100~ms, retry \fn{flame\_init()}. After 3 consecutive failures, halt and signal MOD-08 system fault. \\
+\fn{FLAME\_ERR\_NO\_SENSOR} & Check ADC wiring. Treat as hardware fault; do not continue operating with faulty sensor. \\
+\fn{FLAME\_ERR\_TIMEOUT}    & Retry after \fn{FLAME\_SAMPLE\_INTERVAL\_MS + 10}~ms. If persistent, call \fn{flame\_stop()} then \fn{flame\_start()} to restart the loop. \\
+\bottomrule
+\end{tabularx}
+\caption{MOD-02 error handling recommendations}
+\end{table}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Integration Example}
+\sectionrule
+
+\begin{lstlisting}[caption={Full MOD-02 integration with callback and error handling}]
+#include "flame_detection.h"
+#include <Arduino.h>
+
+/* Callback: invoked by MOD-02 every 50 ms */
+void on_flame_sample(const flame_data_t *data) {
+    if (!data->detected) return;
+
+    switch (data->direction) {
+        case FLAME_DIR_LEFT:
+            Serial.printf("[%lu ms] Flame LEFT  | intensity=%u\n",
+                          data->timestamp_ms, data->max_intensity);
+            break;
+        case FLAME_DIR_CENTER:
+            Serial.printf("[%lu ms] Flame AHEAD | intensity=%u\n",
+                          data->timestamp_ms, data->max_intensity);
+            break;
+        case FLAME_DIR_RIGHT:
+            Serial.printf("[%lu ms] Flame RIGHT | intensity=%u\n",
+                          data->timestamp_ms, data->max_intensity);
+            break;
+        default: break;
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+
+    /* Step 1: initialise hardware (MOD-01 ADC pins) */
+    if (flame_init() != FLAME_OK) {
+        Serial.println("ERROR: flame_init failed. Halting.");
+        while (1);
+    }
+
+    /* Step 2: start 20 Hz sampling with callback */
+    flame_start(on_flame_sample);
+}
+
+void loop() {
+    /* Pull model: read latest data every 100 ms */
+    flame_data_t latest;
+    if (flame_read(&latest) == FLAME_OK) {
+        /* Forward to MOD-07 autonomy layer:                        */
+        /* autonomy_input_t in = { .flame_data = latest, ... };    */
+        /* autonomy_update(&in);                                    */
+    }
+    delay(100);
+}
+\end{lstlisting}
+
+% ════════════════════════════════════════════════════════════════════════════
+\section{Known Limitations \& TODOs}
+\sectionrule
+
+\begin{itemize}
+  \item \textbf{Ambient light interference.} Strong sunlight or incandescent lamps generate IR radiation indistinguishable from flame by the KY-026. Shielded housings and directional tubes are recommended. \fn{FLAME\_THRESHOLD} must be tuned in the deployment environment.
+  \item \textbf{Single-axis detection only.} Left/center/right; no elevation angle. A flame significantly above or below the sensor plane may not be detected.
+  \item \textbf{Winner-takes-all direction.} A weighted angular average of all \fn{raw[i]} values would provide finer directional precision than the current dominant-sensor approach.
+  \item \textbf{Callback thread safety.} If FreeRTOS tasks are used, a mutex must protect the shared \fn{flame\_data\_t} buffer.
+  \item \textbf{TODO:} Moving-average filter over last $N$ samples before threshold comparison to reduce noise.
+  \item \textbf{TODO:} Add \fn{FLAME\_ERR\_STALE} when \fn{timestamp\_ms} has not updated within $2 \times$ \fn{FLAME\_SAMPLE\_INTERVAL\_MS}.
+  \item \textbf{TODO:} Validate \fn{FLAME\_THRESHOLD = 500} experimentally with the KY-026 at typical operating distances and lighting conditions.
+\end{itemize}
+
+\vfill
+{\color{headerblue}\rule{\linewidth}{1.5pt}}
+\begin{center}
+  \small
+  Mehmet Alp ATAY (220104004020) \quad--\quad Adil Mert ERGORUN (220104004048)\\
+  CSE 396 Group 2 \quad--\quad Version 0.1 \quad--\quad April 2026
+\end{center}
+
+\end{document}
