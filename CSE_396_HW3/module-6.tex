@@ -1,0 +1,671 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{mdframed}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{array}
+%\usepackage{microtype}
+
+% -------------------------------------------------------
+% Column types
+% -------------------------------------------------------
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% -------------------------------------------------------
+% Colour palette
+% -------------------------------------------------------
+\definecolor{codeblue}{RGB}{230,240,255}
+\definecolor{codegray}{RGB}{245,245,245}
+\definecolor{warnbg}{RGB}{255,243,220}
+\definecolor{notebg}{RGB}{230,255,230}
+\definecolor{keywordcolor}{RGB}{0,0,180}
+\definecolor{commentcolor}{RGB}{70,130,70}
+\definecolor{stringcolor}{RGB}{163,21,21}
+
+% -------------------------------------------------------
+% C listing style
+% -------------------------------------------------------
+\lstdefinestyle{cstyle}{
+  language=C,
+  backgroundcolor=\color{codeblue},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{keywordcolor}\bfseries,
+  commentstyle=\color{commentcolor}\itshape,
+  stringstyle=\color{stringcolor},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  numbersep=8pt,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!50},
+  tabsize=4,
+  showstringspaces=false,
+  morekeywords={uint8_t,uint16_t,uint32_t,int8_t,int16_t,int32_t,
+                suppression_status_t,suppression_state_t,suppression_cmd_t,
+                SUPPRESSION_OK,SUPPRESSION_ERR_INIT,SUPPRESSION_ERR_COOLDOWN,
+                SUPPRESSION_ERR_HARDWARE}
+}
+
+% -------------------------------------------------------
+% Callout boxes
+% -------------------------------------------------------
+\newmdenv[backgroundcolor=warnbg,linecolor=orange!70!black,linewidth=1.5pt,
+          leftmargin=0pt,rightmargin=0pt,innerleftmargin=8pt,innerrightmargin=8pt,
+          innertopmargin=6pt,innerbottommargin=6pt]{warnbox}
+
+\newmdenv[backgroundcolor=notebg,linecolor=green!60!black,linewidth=1.5pt,
+          leftmargin=0pt,rightmargin=0pt,innerleftmargin=8pt,innerrightmargin=8pt,
+          innertopmargin=6pt,innerbottommargin=6pt]{notebox}
+
+% -------------------------------------------------------
+% API table macro  (Function | Parameters | Return | Description)
+% -------------------------------------------------------
+\newcommand{\apitable}[1]{%
+  \begin{table}[H]
+  \centering\scriptsize
+  \begin{tabularx}{\textwidth}{L{4.8cm} L{3.6cm} L{2.8cm} X}
+  \toprule
+  \textbf{Function Signature} & \textbf{Parameters} & \textbf{Return Type} & \textbf{Description} \\
+  \midrule
+  #1
+  \bottomrule
+  \end{tabularx}
+  \end{table}%
+}
+
+% -------------------------------------------------------
+% Document metadata
+% -------------------------------------------------------
+\hypersetup{
+  pdftitle={MOD-06 Fire Suppression Module - Detailed Technical Document},
+  pdfauthor={Mehmet Alp ATAY, Adil Mert ERGORUN},
+  colorlinks=true, linkcolor=blue!70!black, urlcolor=blue!70!black
+}
+
+\title{\textbf{MOD-06: Fire Suppression Hardware Module}\\[0.4em]
+       \large Detailed Technical Documentation\\[0.3em]
+       \normalsize CSE 396 --- Autonomous Fire Detection and Suppression Rover}
+\author{Mehmet Alp ATAY (220104004020) \and Adil Mert ERG\"{O}R\"{U}N (220104004048)}
+\date{March 29, 2026 \quad|\quad Version 0.1}
+
+% -------------------------------------------------------
+\begin{document}
+% -------------------------------------------------------
+
+\maketitle
+\tableofcontents
+\newpage
+
+% =======================================================
+\section{Module Overview}
+% =======================================================
+
+MOD-06 is the \textbf{Fire Suppression Hardware} module of the Autonomous Fire Detection and Suppression Rover. It is responsible for physically extinguishing a detected fire by operating a relay-driven DC water pump. The module abstracts all low-level hardware interactions (GPIO toggling, relay timing, cooldown enforcement) and exposes a clean, command-driven interface to the Decision and Autonomy module (MOD-07).
+
+\subsection{Position in System Architecture}
+
+\begin{center}
+\small
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{MOD-07 (Autonomy SW)} & $\xrightarrow{\text{suppression\_cmd\_t}}$ & \textbf{MOD-06 (Suppression HW)} \\
+\hline
+\end{tabular}
+\end{center}
+
+MOD-06 receives \texttt{suppression\_cmd\_t} structs from MOD-07. It controls the relay GPIO pin (SUPPRESSION\_RELAY\_PIN) connected to the water pump circuit and maintains internal state (activation count, timestamps, cooldown).
+
+\subsection{Responsibilities}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Initialize relay GPIO pin and validate hardware readiness.
+  \item Activate the water pump for a configurable duration.
+  \item Enforce a minimum cooldown period between consecutive activations to protect relay hardware.
+  \item Deactivate the pump immediately upon receiving a stop command.
+  \item Expose current module state (active flag, timestamps, activation count).
+  \item Execute structured commands issued by MOD-07.
+  \item Safely power down hardware on system shutdown.
+\end{itemize}
+
+\subsection{File Location}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+Header files/MOD 06/fire_suppression.h
+\end{lstlisting}
+
+\subsection{Dependencies}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \texttt{<stdint.h>} --- Fixed-width integer types (\texttt{uint8\_t}, \texttt{uint16\_t}, \texttt{uint32\_t}).
+  \item Arduino Core for ESP32 --- \texttt{digitalWrite()}, \texttt{pinMode()}, \texttt{millis()} for GPIO and timing.
+  \item No upstream module headers are \texttt{\#include}d; MOD-06 is a leaf hardware module.
+\end{itemize}
+
+% =======================================================
+\section{Constants and Macros}
+% =======================================================
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{5.5cm} L{2.5cm} X}
+\toprule
+\textbf{Macro Name} & \textbf{Value} & \textbf{Purpose} \\
+\midrule
+\texttt{SUPPRESSION\_PUMP\_DURATION\_MS} & \texttt{3000} & Default pump burst time in milliseconds (3 seconds). Used when the command's \texttt{duration\_ms} field is zero. \\[4pt]
+\texttt{SUPPRESSION\_COOLDOWN\_MS} & \texttt{500} & Minimum interval between two consecutive activations (ms). Prevents relay chatter and premature wear. \\[4pt]
+\texttt{SUPPRESSION\_RELAY\_PIN} & \texttt{7} & GPIO pin number wired to the relay IN signal. Must match the physical board layout. \\
+\bottomrule
+\end{tabularx}
+\caption{MOD-06 compile-time constants defined in \texttt{fire\_suppression.h}.}
+\end{table}
+
+\begin{notebox}
+\textbf{Note:} \texttt{SUPPRESSION\_RELAY\_PIN} is the only hardware-specific constant. When porting to a different board, only this value needs to change.
+\end{notebox}
+
+% =======================================================
+\section{Data Types}
+% =======================================================
+
+\subsection{\texttt{suppression\_status\_t} --- Return / Error Codes}
+
+This \texttt{typedef enum} is the return type for all public functions. It encodes success and specific failure modes.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{5.5cm} L{1.5cm} X}
+\toprule
+\textbf{Enumerator} & \textbf{Value} & \textbf{Meaning} \\
+\midrule
+\texttt{SUPPRESSION\_OK}           & \texttt{0}  & Operation completed successfully. \\[4pt]
+\texttt{SUPPRESSION\_ERR\_INIT}    & \texttt{-1} & Hardware initialisation failed (e.g., GPIO pin not configurable). Returned only by \texttt{suppression\_init()}. \\[4pt]
+\texttt{SUPPRESSION\_ERR\_COOLDOWN}& \texttt{-2} & Activation request rejected because less than \texttt{SUPPRESSION\_COOLDOWN\_MS} has elapsed since last activation. \\[4pt]
+\texttt{SUPPRESSION\_ERR\_HARDWARE}& \texttt{-4} & Relay or pump hardware fault detected during operation. Returned by \texttt{suppression\_deactivate()} if relay fails to open. \\
+\bottomrule
+\end{tabularx}
+\caption{\texttt{suppression\_status\_t} --- all enumerators and their semantic meaning.}
+\end{table}
+
+\begin{warnbox}
+\textbf{Warning:} Error code \texttt{-3} is intentionally skipped (reserved for future use). Always compare against named constants, never raw integer values.
+\end{warnbox}
+
+\subsection{\texttt{suppression\_state\_t} --- Module State Snapshot}
+
+A caller-owned struct populated by \texttt{suppression\_get\_state()}. Provides a consistent snapshot of the subsystem at any point in time.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} L{2.5cm} L{2.5cm} X}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Units / Range} & \textbf{Description} \\
+\midrule
+\texttt{is\_active} & \texttt{uint8\_t} & 0 or 1 & Non-zero while the pump relay is closed and water is flowing. Set by \texttt{suppression\_activate()}, cleared by \texttt{suppression\_deactivate()} or after the burst duration expires. \\[4pt]
+\texttt{last\_activated\_ms} & \texttt{uint32\_t} & ms since boot & Timestamp recorded at the moment of the most recent successful activation. Used internally to enforce cooldown. Wraps after $\approx$49.7 days. \\[4pt]
+\texttt{total\_activations} & \texttt{uint32\_t} & count [0, $2^{32}$-1] & Cumulative number of times the pump has been successfully activated since \texttt{suppression\_init()} was called. Useful for wear monitoring and diagnostics. \\
+\bottomrule
+\end{tabularx}
+\caption{Fields of \texttt{suppression\_state\_t}.}
+\end{table}
+
+\subsection{\texttt{suppression\_cmd\_t} --- Command Structure}
+
+Sent by MOD-07 (or MOD-08 for test injection). Contains all information needed to execute one suppression action.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} L{2.5cm} L{2.5cm} X}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Valid Range} & \textbf{Description} \\
+\midrule
+\texttt{activate} & \texttt{uint8\_t} & 0 or 1 & Command intent: \texttt{1} = activate pump, \texttt{0} = deactivate pump immediately. \\[4pt]
+\texttt{duration\_ms} & \texttt{uint16\_t} & 0 -- 65535 ms & Duration override for pump-on time. A value of \texttt{0} instructs the module to use the compile-time default \texttt{SUPPRESSION\_PUMP\_DURATION\_MS} (3000 ms). \\[4pt]
+\texttt{issued\_at\_ms} & \texttt{uint32\_t} & ms since boot & Timestamp recorded by MOD-07 when the command was constructed. Enables MOD-06 to detect stale commands and measure command latency. \\
+\bottomrule
+\end{tabularx}
+\caption{Fields of \texttt{suppression\_cmd\_t}.}
+\end{table}
+
+\begin{notebox}
+\textbf{Note:} When \texttt{activate == 0}, the \texttt{duration\_ms} and \texttt{issued\_at\_ms} fields are still present but only \texttt{activate} is acted upon; the pump is deactivated regardless of duration.
+\end{notebox}
+
+% =======================================================
+\section{Public API --- Function Reference}
+% =======================================================
+
+\subsection{\texttt{suppression\_init()}}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+suppression_status_t suppression_init(void);
+\end{lstlisting}
+
+\textbf{Purpose:} Configures the relay GPIO pin as an output and drives it LOW (relay open, pump off). Resets internal state counters.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} X}
+\toprule
+\textbf{Attribute} & \textbf{Detail} \\
+\midrule
+Parameters & None \\
+Returns & \texttt{SUPPRESSION\_OK} (0) on success; \texttt{SUPPRESSION\_ERR\_INIT} (-1) if the GPIO cannot be configured. \\
+Pre-conditions & Must be called once before any other MOD-06 function. Typically invoked in the system \texttt{setup()} routine. \\
+Post-conditions & Relay is open (pump is off). \texttt{is\_active == 0}, \texttt{total\_activations == 0}, \texttt{last\_activated\_ms == 0}. \\
+Side effects & Sets \texttt{SUPPRESSION\_RELAY\_PIN} to OUTPUT mode; asserts LOW. \\
+Re-entrant & No --- calling twice without \texttt{suppression\_stop()} is not supported. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\texttt{suppression\_activate()}}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+suppression_status_t suppression_activate(uint16_t duration_ms);
+\end{lstlisting}
+
+\textbf{Purpose:} Closes the relay (activates the pump) for the specified number of milliseconds. If \texttt{duration\_ms} is 0, the default burst duration \texttt{SUPPRESSION\_PUMP\_DURATION\_MS} (3000 ms) is used.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} X}
+\toprule
+\textbf{Attribute} & \textbf{Detail} \\
+\midrule
+Parameters & \texttt{duration\_ms}: pump-on time in milliseconds; 0 $\Rightarrow$ use default (3000 ms). \\
+Returns & \texttt{SUPPRESSION\_OK} on success; \texttt{SUPPRESSION\_ERR\_COOLDOWN} if cooldown has not elapsed; \texttt{SUPPRESSION\_ERR\_HARDWARE} if relay fails to close. \\
+Pre-conditions & \texttt{suppression\_init()} must have returned \texttt{SUPPRESSION\_OK}. \\
+Post-conditions & Relay closes; pump starts. \texttt{is\_active == 1}. \texttt{last\_activated\_ms} is updated to current \texttt{millis()}. \texttt{total\_activations} is incremented by 1. \\
+Side effects & Drives \texttt{SUPPRESSION\_RELAY\_PIN} HIGH. Schedules automatic deactivation after \texttt{duration\_ms}. \\
+Cooldown check & Internally computes \texttt{millis() - last\_activated\_ms}. If less than \texttt{SUPPRESSION\_COOLDOWN\_MS} (500 ms), returns \texttt{SUPPRESSION\_ERR\_COOLDOWN} immediately without toggling the relay. \\
+Re-entrant & No --- calling while \texttt{is\_active == 1} is undefined. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\texttt{suppression\_deactivate()}}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+suppression_status_t suppression_deactivate(void);
+\end{lstlisting}
+
+\textbf{Purpose:} Immediately opens the relay and stops the pump, regardless of remaining burst duration.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} X}
+\toprule
+\textbf{Attribute} & \textbf{Detail} \\
+\midrule
+Parameters & None \\
+Returns & \texttt{SUPPRESSION\_OK} on success; \texttt{SUPPRESSION\_ERR\_HARDWARE} if the relay fails to open. \\
+Pre-conditions & May be called at any time after \texttt{suppression\_init()}. Safe to call even if pump is already off. \\
+Post-conditions & Relay opens; pump stops. \texttt{is\_active == 0}. \\
+Side effects & Drives \texttt{SUPPRESSION\_RELAY\_PIN} LOW. Cancels any pending auto-deactivation timer. \\
+Re-entrant & No. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\texttt{suppression\_is\_active()}}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+uint8_t suppression_is_active(void);
+\end{lstlisting}
+
+\textbf{Purpose:} Non-blocking query of pump status. Allows callers to poll the suppression state without copying the full state struct.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} X}
+\toprule
+\textbf{Attribute} & \textbf{Detail} \\
+\midrule
+Parameters & None \\
+Returns & \texttt{1} if the pump relay is currently closed (pump running); \texttt{0} if the pump is idle. \\
+Pre-conditions & \texttt{suppression\_init()} must have been called. \\
+Post-conditions & None --- read-only query. \\
+Side effects & None. \\
+Re-entrant & Yes --- safe to call from multiple contexts. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\texttt{suppression\_get\_state()}}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+suppression_status_t suppression_get_state(suppression_state_t *out);
+\end{lstlisting}
+
+\textbf{Purpose:} Copies the current internal module state into a caller-owned \texttt{suppression\_state\_t} struct for diagnostics, logging, or telemetry.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} X}
+\toprule
+\textbf{Attribute} & \textbf{Detail} \\
+\midrule
+Parameters & \texttt{out}: non-NULL pointer to a \texttt{suppression\_state\_t} buffer owned by the caller. \\
+Returns & \texttt{SUPPRESSION\_OK} always (assuming \texttt{out} is non-NULL and memory is accessible). \\
+Pre-conditions & \texttt{out} must point to a valid, writable memory region of at least \texttt{sizeof(suppression\_state\_t)} bytes. \\
+Post-conditions & All three fields of \texttt{*out} are populated with the current internal values. \\
+Side effects & None --- read-only operation. \\
+Re-entrant & Yes. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{warnbox}
+\textbf{Warning:} Passing \texttt{NULL} as \texttt{out} is undefined behavior. The implementation does not perform a NULL check; callers are responsible for providing a valid pointer.
+\end{warnbox}
+
+\subsection{\texttt{suppression\_apply\_cmd()}}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+suppression_status_t suppression_apply_cmd(const suppression_cmd_t *cmd);
+\end{lstlisting}
+
+\textbf{Purpose:} High-level entry point intended for use by MOD-07 and MOD-08. Parses a \texttt{suppression\_cmd\_t} and dispatches to \texttt{suppression\_activate()} or \texttt{suppression\_deactivate()} accordingly.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} X}
+\toprule
+\textbf{Attribute} & \textbf{Detail} \\
+\midrule
+Parameters & \texttt{cmd}: non-NULL pointer to a \texttt{const suppression\_cmd\_t}. \\
+Returns & Propagates the return value of whichever lower-level function is invoked. Returns \texttt{SUPPRESSION\_OK} if command is applied successfully. \\
+Pre-conditions & \texttt{cmd} must not be NULL. \texttt{suppression\_init()} must have been called. \\
+Post-conditions & Depends on \texttt{cmd->activate}: pump is either activated (for \texttt{cmd->duration\_ms} ms) or immediately deactivated. \\
+Side effects & Same as the underlying \texttt{suppression\_activate()} or \texttt{suppression\_deactivate()} call. \\
+Stale command handling & If \texttt{millis() - cmd->issued\_at\_ms} exceeds a system-defined latency threshold, the command may be discarded and a warning logged (implementation-dependent). \\
+Re-entrant & No. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{\texttt{suppression\_stop()}}
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+void suppression_stop(void);
+\end{lstlisting}
+
+\textbf{Purpose:} Graceful shutdown. Opens the relay, ensures the pump is off, and releases any hardware resources held by the module. Called during system teardown.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{3.5cm} X}
+\toprule
+\textbf{Attribute} & \textbf{Detail} \\
+\midrule
+Parameters & None \\
+Returns & \texttt{void} \\
+Pre-conditions & May be called at any time. Safe even if the module was never initialised. \\
+Post-conditions & Relay is open; pump is off. GPIO pin is set to INPUT (high-impedance) to minimise standby current. \\
+Side effects & Drives \texttt{SUPPRESSION\_RELAY\_PIN} LOW then sets it to INPUT mode. \\
+Re-entrant & No. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =======================================================
+\section{Timing and Hardware Constraints}
+% =======================================================
+
+\subsection{Cooldown Mechanism}
+
+The cooldown guard is the most critical timing constraint in MOD-06. It prevents rapid successive relay toggling, which can cause contact wear, voltage spikes, and pump damage.
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{5cm} X}
+\toprule
+\textbf{Parameter} & \textbf{Value / Notes} \\
+\midrule
+Cooldown period & 500 ms (\texttt{SUPPRESSION\_COOLDOWN\_MS}) \\
+Enforcement & Checked at entry of \texttt{suppression\_activate()} using \texttt{millis() - last\_activated\_ms < SUPPRESSION\_COOLDOWN\_MS}. \\
+Effect of violation & Returns \texttt{SUPPRESSION\_ERR\_COOLDOWN}; relay is \textbf{not} toggled. \\
+Cooldown reset & \texttt{last\_activated\_ms} is updated \textbf{only} on successful activation. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Default Burst Duration}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{5cm} X}
+\toprule
+\textbf{Parameter} & \textbf{Value / Notes} \\
+\midrule
+Default burst & 3000 ms (\texttt{SUPPRESSION\_PUMP\_DURATION\_MS}) \\
+Override mechanism & Pass non-zero \texttt{duration\_ms} to \texttt{suppression\_activate()} or set \texttt{cmd.duration\_ms $\neq$ 0} in \texttt{suppression\_apply\_cmd()}. \\
+Maximum useful burst & Hardware-limited by water reservoir capacity. No software cap is enforced. \\
+Auto-deactivation & Implementation must schedule a timer or track elapsed time in \texttt{loop()} to deactivate after the burst duration. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{GPIO Signal Timing}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{5cm} X}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Relay GPIO pin & \texttt{SUPPRESSION\_RELAY\_PIN} = 7 \\
+Logic level (pump ON) & HIGH (3.3 V on ESP32 GPIO) \\
+Logic level (pump OFF) & LOW (0 V) \\
+Relay switch-on time & $\approx$10 ms (typical mechanical relay; hardware dependent) \\
+Relay switch-off time & $\approx$5 ms (spring-return; hardware dependent) \\
+ESP32 GPIO sink/source & Max 40 mA; relay IN draws $\leq$5 mA via opto-coupler \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =======================================================
+\section{Inter-Module Protocol: MOD-07 \texorpdfstring{$\rightarrow$}{->} MOD-06}
+% =======================================================
+
+The following sequence describes the standard command-driven suppression cycle, as initiated by MOD-07 when the FSM enters the \texttt{EXTINGUISH} state.
+
+\begin{enumerate}[leftmargin=2em, label=\textbf{Step \arabic*.}]
+
+  \item \textbf{FSM enters EXTINGUISH state (MOD-07)} \\
+        MOD-07's finite state machine determines that the rover has arrived at the target and begins suppression.
+
+  \item \textbf{MOD-07 constructs command struct}
+\begin{lstlisting}[style=cstyle, numbers=none]
+suppression_cmd_t cmd;
+cmd.activate      = 1;
+cmd.duration_ms   = 0;        /* use default: 3000 ms */
+cmd.issued_at_ms  = millis();
+\end{lstlisting}
+
+  \item \textbf{MOD-07 calls \texttt{suppression\_apply\_cmd(\&cmd)}} \\
+        MOD-06 receives the command, checks cooldown, closes the relay, updates \texttt{is\_active} and \texttt{last\_activated\_ms}.
+
+  \item \textbf{Pump runs for 3000 ms} \\
+        During this period, MOD-07 may poll \texttt{suppression\_is\_active()} to track progress. MOD-07 remains in \texttt{EXTINGUISH} state.
+
+  \item \textbf{Auto-deactivation} \\
+        After the burst duration, MOD-06 opens the relay (\texttt{is\_active} $\leftarrow$ 0). Cooldown timer starts.
+
+  \item \textbf{MOD-07 transitions to VERIFY state} \\
+        MOD-07 reads flame sensor data (via MOD-02) to confirm the fire is extinguished.
+
+  \item \textbf{Repeat or return to SEARCH} \\
+        If flame is still detected after cooldown: repeat from Step 2. \\
+        If no flame detected: MOD-07 transitions to \texttt{SEARCH} state.
+
+\end{enumerate}
+
+\subsection{Emergency Stop Path}
+
+At any point, MOD-07 can issue an immediate stop:
+
+\begin{lstlisting}[style=cstyle, numbers=none]
+suppression_cmd_t stop_cmd;
+stop_cmd.activate     = 0;   /* deactivate */
+stop_cmd.duration_ms  = 0;
+stop_cmd.issued_at_ms = millis();
+suppression_apply_cmd(&stop_cmd);
+/* OR equivalently: */
+suppression_deactivate();
+\end{lstlisting}
+
+\begin{warnbox}
+\textbf{Emergency:} \texttt{suppression\_deactivate()} bypasses the cooldown check and opens the relay immediately. It should be called on any system fault (battery low, sensor error, hardware fault).
+\end{warnbox}
+
+% =======================================================
+\section{Error Handling Guide}
+% =======================================================
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{5.5cm} L{3.5cm} X}
+\toprule
+\textbf{Error Code} & \textbf{Trigger Condition} & \textbf{Recommended Action} \\
+\midrule
+\texttt{SUPPRESSION\_ERR\_INIT} & GPIO pin configuration fails during \texttt{suppression\_init()}. & Halt system startup; log the fault; do not proceed to main loop. \\[4pt]
+\texttt{SUPPRESSION\_ERR\_COOLDOWN} & \texttt{suppression\_activate()} called within 500 ms of the previous activation. & Wait for cooldown to expire; retry after \texttt{SUPPRESSION\_COOLDOWN\_MS} ms. MOD-07 should track \texttt{last\_activated\_ms} to avoid repeated rejections. \\[4pt]
+\texttt{SUPPRESSION\_ERR\_HARDWARE} & Relay fails to open during \texttt{suppression\_deactivate()}. & Critical fault. Log error; enter safe state (stop all motion); alert operator if telemetry is available. \\
+\bottomrule
+\end{tabularx}
+\caption{Error code guide for MOD-06 callers.}
+\end{table}
+
+\subsection{Defensive Coding Recommendations}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Always check the return value of \texttt{suppression\_init()} before entering \texttt{loop()}.
+  \item Store \texttt{suppression\_state\_t.last\_activated\_ms} in MOD-07 to precompute cooldown eligibility before issuing commands.
+  \item If \texttt{SUPPRESSION\_ERR\_HARDWARE} is received, do not attempt to re-activate the pump without a full system reset.
+  \item Never call \texttt{suppression\_activate()} while \texttt{suppression\_is\_active() == 1}.
+\end{itemize}
+
+% =======================================================
+\section{Integration Example --- Annotated C Code}
+% =======================================================
+
+The following example demonstrates a complete lifecycle: initialization, command-driven activation from MOD-07, state polling, and graceful shutdown.
+
+\begin{lstlisting}[style=cstyle, caption={Complete MOD-06 integration example (Arduino / ESP32)}, label=lst:mod06-example]
+#include "fire_suppression.h"
+#include <Arduino.h>
+
+/* --- System setup (called once) --------------------------------------- */
+void setup(void) {
+    Serial.begin(115200);
+
+    /* Step 1: Initialise MOD-06 */
+    suppression_status_t st = suppression_init();
+    if (st != SUPPRESSION_OK) {
+        Serial.println("[MOD-06] FATAL: Init failed. Halting.");
+        while (1); /* System halt */
+    }
+    Serial.println("[MOD-06] Initialised. Relay is open, pump is off.");
+}
+
+/* --- Main loop (called repeatedly) ------------------------------------ */
+void loop(void) {
+    /* Simulated trigger from MOD-07: flame detected, rover in position */
+    bool flame_confirmed = true; /* Replace with actual MOD-07 decision */
+
+    if (flame_confirmed) {
+
+        /* Step 2: Build command struct (normally done inside MOD-07) */
+        suppression_cmd_t cmd;
+        cmd.activate     = 1;
+        cmd.duration_ms  = 0;         /* 0 => use default 3000 ms */
+        cmd.issued_at_ms = millis();
+
+        /* Step 3: Apply command */
+        suppression_status_t result = suppression_apply_cmd(&cmd);
+
+        if (result == SUPPRESSION_OK) {
+            Serial.println("[MOD-06] Pump activated.");
+
+        } else if (result == SUPPRESSION_ERR_COOLDOWN) {
+            Serial.println("[MOD-06] Cooldown active, skipping.");
+
+        } else if (result == SUPPRESSION_ERR_HARDWARE) {
+            Serial.println("[MOD-06] HARDWARE FAULT. Entering safe state.");
+            suppression_stop();
+            while (1); /* Halt for safety */
+        }
+
+        /* Step 4: Poll until deactivated (non-blocking with millis()) */
+        uint32_t wait_start = millis();
+        while (suppression_is_active()) {
+            if (millis() - wait_start > 5000UL) {
+                /* Safety timeout: force deactivation */
+                suppression_deactivate();
+                Serial.println("[MOD-06] Safety timeout; pump force-stopped.");
+                break;
+            }
+            delay(50);
+        }
+
+        /* Step 5: Read state for diagnostics */
+        suppression_state_t state;
+        suppression_get_state(&state);
+        Serial.print("[MOD-06] Total activations: ");
+        Serial.println(state.total_activations);
+    }
+
+    /* --- Other system tasks run here --- */
+    delay(100);
+}
+
+/* --- System teardown (e.g., called on power-off signal) --------------- */
+void teardown(void) {
+    suppression_stop();
+    Serial.println("[MOD-06] Shutdown complete.");
+}
+\end{lstlisting}
+
+\subsection{Annotated Walkthrough}
+
+\begin{description}[leftmargin=1.5em]
+  \item[Line 14] \texttt{suppression\_init()} must be the first MOD-06 call. A non-zero return value is a fatal hardware error.
+  \item[Line 31--34] The \texttt{suppression\_cmd\_t} struct is the standard interface between MOD-07 and MOD-06. Setting \texttt{duration\_ms = 0} defers to the compile-time default.
+  \item[Line 37] \texttt{suppression\_apply\_cmd()} dispatches to either \texttt{suppression\_activate()} or \texttt{suppression\_deactivate()} based on \texttt{cmd.activate}.
+  \item[Line 50--56] A safety watchdog using \texttt{millis()} prevents the pump from running indefinitely if the auto-deactivation timer fails.
+  \item[Line 59--63] \texttt{suppression\_get\_state()} is called after every cycle for telemetry. \texttt{total\_activations} can be used to schedule preventive maintenance.
+  \item[Line 71] \texttt{suppression\_stop()} sets GPIO to input mode, reducing standby current draw.
+\end{description}
+
+% =======================================================
+\section{Known Limitations and TODOs}
+% =======================================================
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{L{1cm} L{4.5cm} X}
+\toprule
+\textbf{\#} & \textbf{Limitation} & \textbf{Recommended Resolution} \\
+\midrule
+1 & No water level sensor. Module cannot detect an empty reservoir. & Add a float sensor on MOD-06 hardware and expose a \texttt{suppression\_is\_reservoir\_empty()} function. \\[4pt]
+2 & Auto-deactivation relies on polling in \texttt{loop()}. A timing overrun in another task can extend the pump burst. & Migrate to a FreeRTOS timer callback for hardware-accurate deactivation. \\[4pt]
+3 & \texttt{SUPPRESSION\_RELAY\_PIN} is a compile-time constant, requiring recompilation for different boards. & Refactor to a runtime-configurable parameter passed into \texttt{suppression\_init(uint8\_t relay\_pin)}. \\[4pt]
+4 & No interrupt-driven GPIO feedback confirming relay state. & Add a feedback pin from the relay NO/NC contacts to verify actual relay state on \texttt{deactivate()}. \\[4pt]
+5 & \texttt{millis()} wraps at $\approx$49.7 days; cooldown computation will fail across a wraparound event. & Use modular arithmetic: \texttt{(uint32\_t)(millis() - last\_activated\_ms)} to handle wraparound correctly. \\[4pt]
+6 & No logging or telemetry interface defined in v0.1. & Define a callback \texttt{suppression\_set\_log\_cb()} to allow the system to attach a serial or MQTT logger. \\
+\bottomrule
+\end{tabularx}
+\caption{Known limitations and recommended resolutions for MOD-06 v0.1.}
+\end{table}
+
+\end{document}
