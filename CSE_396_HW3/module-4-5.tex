@@ -1,0 +1,295 @@
+\documentclass[a4paper,11pt]{article}
+
+% Packages
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[table]{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{needspace}
+
+% Colors
+\definecolor{accent}{HTML}{1a3c6e}
+\definecolor{lightbg}{HTML}{e8eef7}
+\definecolor{codebg}{HTML}{f4f4f4}
+\definecolor{tablegray}{HTML}{aaaaaa}
+\definecolor{textgray}{HTML}{555555}
+
+% Hyperref
+\hypersetup{
+    colorlinks=true,
+    linkcolor=accent,
+    urlcolor=accent,
+    pdftitle={MOD-04 and MOD-05 Technical Module Documentation},
+    pdfauthor={Ahmet Halil YAMLI, Derya UYSAL}
+}
+
+% Section formatting
+\titleformat{\section}
+  {\large\bfseries\color{accent}}
+  {\thesection.}{0.5em}{}
+  [\vspace{-0.4em}\textcolor{lightbg}{\rule{\linewidth}{0.5pt}}]
+
+\titleformat{\subsection}
+  {\normalsize\bfseries\color{accent}}
+  {\thesubsection}{0.5em}{}
+
+\titlespacing{\section}{0pt}{18pt}{6pt}
+\titlespacing{\subsection}{0pt}{12pt}{4pt}
+
+% Code style
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    framerule=0pt,
+    rulecolor=\color{codebg},
+    xleftmargin=8pt,
+    xrightmargin=8pt,
+    aboveskip=6pt,
+    belowskip=8pt,
+    language=C
+}
+
+% Table helpers
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcommand{\theadtext}[1]{\textcolor{white}{\textbf{#1}}}
+\arrayrulecolor{tablegray}
+
+\begin{document}
+
+% Cover
+\textcolor{textgray}{\small CSE 396 - Computer Engineering Project}\\
+\textcolor{textgray}{\small Autonomous Fire Detection and Suppression Rover}
+
+\vspace{8pt}
+{\color{accent}\rule{\linewidth}{2pt}}
+\vspace{6pt}
+
+{\LARGE\bfseries\color{accent} MOD-04 and MOD-05: Motion Control and Distance Sensing Software}\\[4pt]
+{\large Technical Module Documentation}
+
+\vspace{4pt}
+{\color{textgray}\rule{\linewidth}{0.5pt}}
+\vspace{10pt}
+
+\begin{tabular}{
+  >{\columncolor{accent}}L{6.46cm}
+  >{\columncolor{accent}}L{4.25cm}
+  >{\columncolor{accent}}L{5.3cm}
+}
+\theadtext{Name} & \theadtext{Student ID} & \theadtext{Assigned Modules} \\
+\end{tabular}
+
+\vspace{0pt}
+\begin{tabular}{L{6.46cm} L{4.25cm} L{5.3cm}}
+\rowcolor{white}   Ahmet Halil YAMLI & 220104004957 & MOD-04, MOD-05 \\
+\rowcolor{lightbg} Derya UYSAL       & 220104004045 & MOD-04, MOD-05 \\
+\end{tabular}
+
+\vspace{16pt}
+
+\needspace{8\baselineskip}
+\section{Module Overview}
+
+MOD-04 and MOD-05 form the rover's close-range navigation loop.
+MOD-05 performs ultrasonic distance sensing and reports obstacle proximity,
+while MOD-04 converts high-level movement requests into low-level differential
+drive commands.
+
+These two modules are tightly coupled with the autonomy layer:
+MOD-05 continuously feeds distance data to MOD-07, and MOD-07 then commands
+MOD-04 to drive, turn, or stop based on mission state and safety checks.
+
+\needspace{14\baselineskip}
+\section{Dependency and Signal Map}
+
+\begin{tabular}{L{2.72cm} L{2.38cm} L{4.25cm} L{7.48cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Flow Type} & \theadtext{Source} & \theadtext{Data / Signal} & \theadtext{Destination and Purpose} \\
+\midrule
+\rowcolor{white}   Upstream Input   & MOD-08 & \texttt{simulate\_dist} via test harness & MOD-05 uses it in simulation tests to emulate sensor data. \\
+\rowcolor{lightbg} Upstream Input   & MOD-07 & \texttt{motion\_cmd} (direction and speed) & MOD-04 executes autonomy decisions. \\
+\rowcolor{white}   Downstream Output & MOD-05 & \texttt{dist\_reading\_t} & MOD-07 evaluates proximity and collision risk. \\
+\rowcolor{lightbg} Downstream Output & MOD-04 & PWM and direction control lines & MOD-03 actuates motors and wheel movement. \\
+\bottomrule
+\end{tabular}
+
+\needspace{14\baselineskip}
+\section{Constants and Macros}
+
+\begin{tabular}{L{5.1cm} L{2.6cm} L{9.13cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Name} & \theadtext{Value} & \theadtext{Purpose} \\
+\midrule
+\rowcolor{white}   \texttt{DIST\_SAFE\_THRESHOLD\_CM} & \texttt{15} & Safe obstacle limit in centimeters. If the measured distance is less than or equal to this value, the state is considered unsafe. \\
+\rowcolor{lightbg} \texttt{MOTION\_DEFAULT\_SPEED}    & \texttt{150} & Default PWM speed value in the 0-255 range for normal drive commands. \\
+\rowcolor{white}   \texttt{MOTION\_MIN\_THRESHOLD}    & \texttt{LOCO\_HW\_MIN\_PWM} & Minimum effective PWM level required to overcome wheel static friction. \\
+\bottomrule
+\end{tabular}
+
+\needspace{18\baselineskip}
+\section{Data Types}
+
+\subsection{MOD-04 Status Type (\texttt{motion\_status\_t})}
+
+\begin{tabular}{L{4.42cm} L{1.7cm} L{10.71cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Enumerator} & \theadtext{Value} & \theadtext{Meaning} \\
+\midrule
+\rowcolor{white}   \texttt{MOTION\_OK}         & \texttt{0}  & Operation completed successfully and module state is valid. \\
+\rowcolor{lightbg} \texttt{MOTION\_ERR\_DRIVER} & \texttt{-1} & Motor driver communication or actuation failure. \\
+\rowcolor{white}   \texttt{MOTION\_ERR\_PARAM}  & \texttt{-2} & Invalid speed or direction argument was provided. \\
+\bottomrule
+\end{tabular}
+
+\subsection{MOD-04 Direction Type (\texttt{motion\_direction\_t})}
+
+\begin{tabular}{L{5.1cm} L{11.73cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Enumerator} & \theadtext{Meaning} \\
+\midrule
+\rowcolor{white}   \texttt{MOTION\_DIR\_STOP}     & Stop both motors immediately. \\
+\rowcolor{lightbg} \texttt{MOTION\_DIR\_FORWARD}  & Move rover forward. \\
+\rowcolor{white}   \texttt{MOTION\_DIR\_BACKWARD} & Move rover backward. \\
+\rowcolor{lightbg} \texttt{MOTION\_DIR\_LEFT}     & Perform differential left turn. \\
+\rowcolor{white}   \texttt{MOTION\_DIR\_RIGHT}    & Perform differential right turn. \\
+\bottomrule
+\end{tabular}
+
+\subsection{MOD-05 Reading Type (\texttt{dist\_reading\_t})}
+
+\begin{tabular}{L{4.25cm} L{2.04cm} L{10.54cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Field} & \theadtext{Type} & \theadtext{Description} \\
+\midrule
+\rowcolor{white}   \texttt{distance\_cm} & \texttt{uint16\_t} & Distance computed from ultrasonic echo time. \\
+\rowcolor{lightbg} \texttt{timestamp}    & \texttt{uint32\_t} & Reading timestamp, typically in milliseconds via \texttt{millis()}. \\
+\bottomrule
+\end{tabular}
+
+\needspace{20\baselineskip}
+\section{Public API}
+
+\subsection{Distance Sensing API (MOD-05)}
+
+\begin{tabular}{L{4.42cm} L{2.55cm} L{2.55cm} L{7.31cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Function} & \theadtext{Parameters} & \theadtext{Return} & \theadtext{Description} \\
+\midrule
+\rowcolor{white}   \texttt{distance\_init}      & \texttt{void} & \texttt{int}        & Configures trigger and echo pins and prepares sensor I/O. \\
+\rowcolor{lightbg} \texttt{distance\_read\_cm}  & \texttt{void} & \texttt{uint16\_t}  & Sends ultrasonic pulse and returns measured distance in centimeters. \\
+\rowcolor{white}   \texttt{distance\_is\_unsafe} & \texttt{void} & \texttt{int}        & Returns \texttt{1} if distance is less than or equal to \texttt{DIST\_SAFE\_THRESHOLD\_CM}, otherwise \texttt{0}. \\
+\bottomrule
+\end{tabular}
+
+\subsection{Motion Control API (MOD-04)}
+
+\begin{tabular}{L{4.42cm} L{4.08cm} L{2.72cm} L{5.61cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Function} & \theadtext{Parameters} & \theadtext{Return} & \theadtext{Description} \\
+\midrule
+\rowcolor{white}   \texttt{motion\_init}             & \texttt{void} & \texttt{motion\_status\_t} & Initializes motor pins and PWM channels. \\
+\rowcolor{lightbg} \texttt{motion\_drive}            & \texttt{motion\_direction\_t dir, uint8\_t speed} & \texttt{motion\_status\_t} & Converts abstract direction and speed to low-level driver commands. \\
+\rowcolor{white}   \texttt{motion\_set\_differential} & \texttt{int16\_t left\_speed, int16\_t right\_speed} & \texttt{motion\_status\_t} & Drives left and right motors independently for fine maneuvers. \\
+\rowcolor{lightbg} \texttt{motion\_get\_state}       & \texttt{motion\_state\_t *out\_state} & \texttt{void} & Copies current direction and speed telemetry. \\
+\rowcolor{white}   \texttt{motion\_emergency\_stop}  & \texttt{void} & \texttt{void} & Immediately sets all motor outputs to stop. \\
+\bottomrule
+\end{tabular}
+
+\needspace{18\baselineskip}
+\section{Inter-Module Protocol: MOD-05 to MOD-07 to MOD-04}
+
+\textbf{Step 1 - Sensor Acquisition:}
+MOD-05 repeatedly samples range information using \texttt{distance\_read\_cm()}.
+
+\textbf{Step 2 - Data Publishing:}
+Each measurement is propagated as distance context for MOD-07 decision logic.
+
+\textbf{Step 3 - Safety Evaluation:}
+MOD-07 checks unsafe proximity, either directly through threshold logic or by
+using \texttt{distance\_is\_unsafe()} semantics.
+
+\textbf{Step 4 - Command Generation:}
+MOD-07 computes a motion command (\texttt{motion\_direction\_t} and speed).
+
+\textbf{Step 5 - Actuation:}
+MOD-04 executes the request via \texttt{motion\_drive()} and emits PWM and
+direction signals toward MOD-03.
+
+\needspace{24\baselineskip}
+\section{Quick-Start Integration}
+
+\subsection{Safe Navigation Loop}
+
+\begin{lstlisting}
+#include "distance_sensing.h"
+#include "motion_control.h"
+
+void setup(void) {
+    distance_init();
+    motion_init();
+}
+
+void loop(void) {
+    if (distance_is_unsafe()) {
+        motion_emergency_stop();
+    } else {
+        motion_drive(MOTION_DIR_FORWARD, MOTION_DEFAULT_SPEED);
+    }
+}
+\end{lstlisting}
+
+\subsection{Differential Turn Example}
+
+\begin{lstlisting}
+void avoid_obstacle_with_pivot(void) {
+    motion_set_differential(-120, 120); // left reverse, right forward
+}
+\end{lstlisting}
+
+\needspace{16\baselineskip}
+\section{Failure Modes and Limitations}
+
+\textbf{Distance sensing limits:}
+soft or angled surfaces may absorb or scatter ultrasonic waves, causing
+inaccurate distance values.
+
+\textbf{Motion control limits:}
+without acceleration ramping and encoder feedback, sudden starts can create
+wheel slip and heading drift.
+
+\textbf{Timing sensitivity:}
+late processing in MOD-07 may produce stale command execution if distance data
+is not consumed in time.
+
+\textbf{Hardware variability:}
+battery voltage drops can reduce available motor torque and alter response to a
+fixed PWM value.
+
+\needspace{14\baselineskip}
+\section{Conclusion}
+
+MOD-05 provides the spatial safety perception needed to avoid collisions, while
+MOD-04 provides deterministic actuation for rover movement. Together, they form
+the decision-to-motion bridge between MOD-07 autonomy logic and MOD-03
+locomotion hardware.
+
+\end{document}
