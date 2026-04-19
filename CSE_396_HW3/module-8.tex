@@ -1,0 +1,313 @@
+\documentclass[a4paper,11pt]{article}
+
+% ── Packages ──────────────────────────────────────────────────
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{needspace}
+
+% ── Colors ────────────────────────────────────────────────────
+\definecolor{accent}{HTML}{1a3c6e}
+\definecolor{lightbg}{HTML}{e8eef7}
+\definecolor{codebg}{HTML}{f4f4f4}
+\definecolor{tablegray}{HTML}{aaaaaa}
+\definecolor{gray}{HTML}{555555}
+
+% ── Hyperref setup ────────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=accent,
+    urlcolor=accent,
+    pdftitle={MOD-08 Integration \& Test Module},
+    pdfauthor={Ayse Feyza SERBEST, Gorkem UYSAL}
+}
+
+% ── Section title formatting ──────────────────────────────────
+\titleformat{\section}
+  {\large\bfseries\color{accent}}
+  {\thesection.}{0.5em}{}
+  [\vspace{-0.4em}\textcolor{lightbg}{\rule{\linewidth}{0.5pt}}]
+
+\titleformat{\subsection}
+  {\normalsize\bfseries\color{accent}}
+  {\thesubsection}{0.5em}{}
+
+\titlespacing{\section}{0pt}{18pt}{6pt}
+\titlespacing{\subsection}{0pt}{12pt}{4pt}
+
+% ── Code listing style ────────────────────────────────────────
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    framerule=0pt,
+    rulecolor=\color{codebg},
+    xleftmargin=8pt,
+    xrightmargin=8pt,
+    aboveskip=6pt,
+    belowskip=8pt,
+    language=C
+}
+
+% ── Table helpers ─────────────────────────────────────────────
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\newcommand{\theadbg}{\rowcolor{accent}}
+\newcommand{\theadtext}[1]{\textcolor{white}{\textbf{#1}}}
+
+\arrayrulecolor{tablegray}
+
+% ── Document ──────────────────────────────────────────────────
+\begin{document}
+
+% ── Cover ─────────────────────────────────────────────────────
+\textcolor{gray}{\small CSE 396 --- Computer Engineering Project}\\
+\textcolor{gray}{\small Autonomous Fire Detection and Suppression Rover}
+
+\vspace{8pt}
+{\color{accent}\rule{\linewidth}{2pt}}
+\vspace{6pt}
+
+{\LARGE\bfseries\color{accent} MOD-08: Integration \& Test Module}\\[4pt]
+{\large Technical Module Documentation}
+
+\vspace{4pt}
+{\color{gray}\rule{\linewidth}{0.5pt}}
+\vspace{10pt}
+
+\begin{tabular}{
+  >{\columncolor{accent}}L{6.46cm}
+  >{\columncolor{accent}}L{4.25cm}
+  >{\columncolor{accent}}L{5.3cm}
+}
+\theadtext{Name} & \theadtext{Student ID} & \theadtext{Assigned Modules} \\
+\end{tabular}
+
+\vspace{0pt}
+\begin{tabular}{L{6.46cm} L{4.25cm} L{5.3cm}}
+\rowcolor{white}   Ayşe Feyza SERBEST & 220104004052 & MOD-07, MOD-08 \\
+\rowcolor{lightbg} Görkem UYSAL        & 230104004174 & MOD-07, MOD-08 \\
+\end{tabular}
+
+\vspace{16pt}
+
+% ── 1. Purpose ────────────────────────────────────────────────
+\needspace{6\baselineskip}
+\section{Purpose}
+
+MOD-08 serves as the system-wide validation and quality assurance layer for the Autonomous
+Fire Detection and Suppression Rover. Its primary responsibility is to verify that all
+eight modules operate correctly both individually and in concert before and during field
+deployment.
+
+The module provides two complementary testing modes: a \textbf{real hardware self-check}
+that exercises every physical peripheral on the rover, and a \textbf{simulation mode} that
+injects synthetic sensor data into the system, allowing full Finite State Machine (FSM)
+validation without requiring a physical fire source or any hardware.
+
+% ── 2. Dependencies ───────────────────────────────────────────
+\needspace{14\baselineskip}
+\section{Dependencies}
+
+\begin{tabular}{L{4.76cm} L{2.38cm} L{9.86cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Module Name} & \theadtext{ID} & \theadtext{Usage in MOD-08} \\
+\midrule
+\rowcolor{white}   Flame Sensing HW    & \texttt{MOD-01} & Sensor presence validation during self-check \\
+\rowcolor{lightbg} Flame Detection SW  & \texttt{MOD-02} & Full detection pipeline verification via \texttt{flame\_data\_t} \\
+\rowcolor{white}   Locomotion HW       & \texttt{MOD-03} & Motor driver response test \\
+\rowcolor{lightbg} Motion Control SW   & \texttt{MOD-04} & Movement command verification via \texttt{motion\_direction\_t} \\
+\rowcolor{white}   Distance Sensing    & \texttt{MOD-05} & Ultrasonic obstacle detection validation \\
+\rowcolor{lightbg} Fire Suppression HW & \texttt{MOD-06} & Relay and pump activation test \\
+\rowcolor{white}   Autonomy SW         & \texttt{MOD-07} & End-to-end FSM behavior testing with injected triggers \\
+\bottomrule
+\end{tabular}
+
+% ── 3. API Summary ────────────────────────────────────────────
+\needspace{20\baselineskip}
+\section{API Summary}
+
+\subsection{Public Functions}
+
+\begin{tabular}{L{3.74cm} L{3.74cm} L{2.38cm} L{7.14cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Function} & \theadtext{Parameters} & \theadtext{Return} & \theadtext{Description} \\
+\midrule
+\rowcolor{white}   \texttt{test\_init()}                  & \texttt{void}                                      & \texttt{void}            & Initialises internal state and links to all dependent modules. \\
+\rowcolor{lightbg} \texttt{test\_set\_mode()}             & \texttt{test\_mode\_t mode}                        & \texttt{void}            & Switches between \texttt{TEST\_MODE\_REAL} and \texttt{TEST\_MODE\_SIMULATION}. \\
+\rowcolor{white}   \texttt{test\_run\_self\_check()}      & \texttt{void}                                      & \texttt{test\_status\_t} & Sequentially validates all hardware peripherals; returns first failure code or \texttt{TEST\_OK}. \\
+\rowcolor{lightbg} \texttt{test\_get\_report()}           & \texttt{test\_report\_t *report}                   & \texttt{void}            & Fills caller-owned struct with per-subsystem pass/fail flags. \\
+\rowcolor{white}   \texttt{test\_set\_simulation\_data()} & \texttt{const test\_simulation\_input\_t *data}    & \texttt{void}            & Injects synthetic flame and distance data for simulation runs. \\
+\rowcolor{lightbg} \texttt{test\_update()}                & \texttt{void}                                      & \texttt{void}            & Periodic monitoring tick; logs anomalies during continuous operation. \\
+\bottomrule
+\end{tabular}
+
+\subsection{Data Types}
+
+\begin{tabular}{L{4.25cm} L{2.04cm} L{10.71cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Type} & \theadtext{Kind} & \theadtext{Fields / Values} \\
+\midrule
+\rowcolor{white}   \texttt{test\_status\_t}            & enum   & \texttt{TEST\_OK}, \texttt{TEST\_FAIL\_SENSOR}, \texttt{TEST\_FAIL\_DISTANCE}, \texttt{TEST\_FAIL\_MOTOR}, \texttt{TEST\_FAIL\_PUMP} \\
+\rowcolor{lightbg} \texttt{test\_mode\_t}              & enum   & \texttt{TEST\_MODE\_REAL}, \texttt{TEST\_MODE\_SIMULATION} \\
+\rowcolor{white}   \texttt{test\_report\_t}            & struct & \texttt{sensor\_ok}, \texttt{distance\_ok}, \texttt{motor\_ok}, \texttt{pump\_ok} (all \texttt{int}) \\
+\rowcolor{lightbg} \texttt{test\_simulation\_input\_t} & struct & \texttt{flame\_data} (\texttt{flame\_data\_t} from MOD-02), \texttt{distance\_cm} (\texttt{uint16\_t}) \\
+\bottomrule
+\end{tabular}
+
+% ── 4. Module Connections ─────────────────────────────────────
+\needspace{16\baselineskip}
+\section{Module Connections}
+
+MOD-08 occupies a unique position in the architecture: it has \textbf{read access to every
+module's output} for validation purposes, and \textbf{write/inject access} to MOD-02,
+MOD-05, and MOD-07 for simulation. In production mode it is passive; in test mode it
+becomes the data source.
+
+\vspace{6pt}
+\begin{tabular}{L{1.87cm} L{1.87cm} L{3.74cm} L{2.72cm} L{6.8cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{From} & \theadtext{To} & \theadtext{Signal / Data} & \theadtext{Direction} & \theadtext{Notes} \\
+\midrule
+\rowcolor{white}   \texttt{MOD-08} & \texttt{MOD-02} & \texttt{simulate\_flame}    & 08 $\rightarrow$ 02 & Injected \texttt{flame\_data\_t} for simulation runs \\
+\rowcolor{lightbg} \texttt{MOD-08} & \texttt{MOD-05} & \texttt{simulate\_distance} & 08 $\rightarrow$ 05 & Injected \texttt{distance\_cm} for simulation runs \\
+\rowcolor{white}   \texttt{MOD-08} & \texttt{MOD-07} & \texttt{test\_triggers}     & 08 $\rightarrow$ 07 & FSM state injection for behavioral testing \\
+\rowcolor{lightbg} \texttt{MOD-01} & \texttt{MOD-08} & \texttt{sensor\_status}     & 01 $\rightarrow$ 08 & Sensor presence confirmed during self-check \\
+\rowcolor{white}   \texttt{MOD-03} & \texttt{MOD-08} & \texttt{motor\_status}      & 03 $\rightarrow$ 08 & Motor driver response during self-check \\
+\rowcolor{lightbg} \texttt{MOD-05} & \texttt{MOD-08} & \texttt{dist\_reading}      & 05 $\rightarrow$ 08 & Ultrasonic ping result for validation \\
+\rowcolor{white}   \texttt{MOD-06} & \texttt{MOD-08} & \texttt{pump\_status}       & 06 $\rightarrow$ 08 & Relay activation confirmation \\
+\rowcolor{lightbg} \texttt{MOD-07} & \texttt{MOD-08} & \texttt{fsm\_state}         & 07 $\rightarrow$ 08 & Current FSM state read for behavioral validation \\
+\bottomrule
+\end{tabular}
+
+% ── 5. Quick-Start Integration ────────────────────────────────
+\needspace{24\baselineskip}
+\section{Quick-Start Integration}
+
+\subsection{Real Hardware Self-Check}
+
+Call \texttt{test\_run\_self\_check()} inside \texttt{setup()} before the main loop begins.
+If any peripheral fails, the rover halts and the failure code can be read via
+\texttt{test\_get\_report()}.
+
+\begin{lstlisting}
+#include "system_test.h"
+
+void setup() {
+    test_init();
+    test_set_mode(TEST_MODE_REAL);
+
+    if (test_run_self_check() != TEST_OK) {
+        test_report_t report;
+        test_get_report(&report);
+        // Log report.sensor_ok, report.motor_ok, etc.
+        while (1); // Halt on failure
+    }
+}
+
+void loop() {
+    test_update(); // Optional: continuous monitoring
+}
+\end{lstlisting}
+
+\subsection{Simulation Mode --- FSM Testing Without Hardware}
+
+Simulation mode allows developers to validate the full decision pipeline on a laptop or
+in a CI environment. Synthetic \texttt{flame\_data\_t} and distance values are injected
+directly into MOD-02 and MOD-05, exercising MOD-07's state transitions without any
+physical sensors.
+
+\begin{lstlisting}
+#include "system_test.h"
+
+void test_center_flame_approach() {
+    test_simulation_input_t sim = {
+        .flame_data = {
+            .detected      = 1,
+            .direction     = FLAME_DIR_CENTER,
+            .max_intensity = 800
+        },
+        .distance_cm = 40
+    };
+
+    test_set_mode(TEST_MODE_SIMULATION);
+    test_set_simulation_data(&sim);
+    test_update();
+    // Assert: autonomy_get_current_state() == STATE_APPROACH
+}
+\end{lstlisting}
+
+% ── 6. Operational Flow ───────────────────────────────────────
+\needspace{12\baselineskip}
+\section{Operational Flow}
+
+The table below summarises the two operational paths through MOD-08.
+
+\vspace{6pt}
+\begin{tabular}{C{0.5cm} L{7.99cm} L{7.99cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{\#} & \theadtext{Real Mode} & \theadtext{Simulation Mode} \\
+\midrule
+\rowcolor{white}   1 & \texttt{test\_init()} --- link all modules                  & \texttt{test\_init()} --- link all modules \\
+\rowcolor{lightbg} 2 & \texttt{test\_set\_mode(TEST\_MODE\_REAL)}                   & \texttt{test\_set\_mode(TEST\_MODE\_SIMULATION)} \\
+\rowcolor{white}   3 & \texttt{test\_run\_self\_check()} --- ping each peripheral   & \texttt{test\_set\_simulation\_data()} --- load scenario \\
+\rowcolor{lightbg} 4 & \texttt{test\_get\_report()} --- read pass/fail flags        & \texttt{test\_update()} --- inject data into MOD-02/05/07 \\
+\rowcolor{white}   5 & \texttt{test\_update()} --- continuous monitoring loop       & Read \texttt{autonomy\_get\_current\_state()} to assert \\
+\bottomrule
+\end{tabular}
+
+% ── 7. Known Limitations & TODOs ─────────────────────────────
+\needspace{18\baselineskip}
+\section{Known Limitations \& TODOs}
+
+\subsection{Current Limitations}
+
+\begin{itemize}
+  \item Test routines depend on controlled environment conditions; field noise may produce false failures.
+  \item Simulation scenarios are limited to a single static input snapshot --- dynamic sequences are not yet supported.
+  \item No detailed per-component error logging; \texttt{test\_report\_t} provides only binary pass/fail per subsystem.
+  \item \texttt{test\_update()} does not yet implement continuous flame-loss or motor-stall detection.
+\end{itemize}
+
+\subsection{Planned Improvements (TODOs)}
+
+\begin{itemize}
+  \item[$\square$] Add granular error codes to \texttt{test\_report\_t} (e.g., which sensor index failed).
+  \item[$\square$] Extend simulation to support multi-step scenarios with changing distance and flame direction over time.
+  \item[$\square$] Implement automated test logging to serial output or SD card for field debugging.
+  \item[$\square$] Integrate continuous system monitoring with alert thresholds in \texttt{test\_update()}.
+  \item[$\square$] Add a dedicated stress-test mode that cycles \texttt{STATE\_EXTINGUISH} repeatedly to validate relay cooldown (MOD-06).
+\end{itemize}
+
+% ── 8. Version History ────────────────────────────────────────
+\needspace{8\baselineskip}
+\section{Version History}
+
+\begin{tabular}{L{1.7cm} L{2.55cm} L{12.75cm}}
+\toprule
+\rowcolor{accent}
+\theadtext{Version} & \theadtext{Date} & \theadtext{Changes} \\
+\midrule
+\rowcolor{white}   \texttt{v0.1} & 2026-03-28 & Initial draft --- \texttt{test\_init}, \texttt{test\_run\_self\_check}, \texttt{test\_simulate\_fire\_event}, basic self-check stubs. \\
+\rowcolor{lightbg} \texttt{v0.2} & 2026-03-29 & Added \texttt{test\_mode\_t}, \texttt{test\_report\_t}, \texttt{test\_set\_simulation\_data}, \texttt{test\_update}; improved reporting and simulation control. \\
+\bottomrule
+\end{tabular}
+
+\end{document}
