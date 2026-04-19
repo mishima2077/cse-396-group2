@@ -1,0 +1,223 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{graphicx}
+
+\geometry{margin=2.5cm}
+\setstretch{1.2}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection.}{0.5em}{}
+
+\begin{document}
+\section{MOD-01 -- Flame Sensing Hardware}
+
+\subsection{Module Purpose}
+
+MOD-01 is responsible for the physical detection of flame-related infrared signals in the environment. Its main task is to acquire raw sensor information and transmit this information to the software layer for further processing.
+
+Within the rover architecture, this module forms the first stage of the fire detection process. It does not make decisions by itself; instead, it acts as the hardware source of flame intensity data.
+
+\subsection{Main Responsibilities}
+
+The responsibilities of MOD-01 include:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item mounting the flame sensors onto the rover body,
+    \item wiring the sensors to the microcontroller,
+    \item ensuring stable analog signal acquisition,
+    \item reducing noise and ambient light interference,
+    \item providing raw sensor data for software processing.
+\end{itemize}
+
+\subsection{Working Principle}
+
+The flame sensors detect infrared radiation emitted by a flame source. Each sensor produces an electrical output corresponding to the detected intensity. These outputs are read by the microcontroller.
+
+By placing multiple flame sensors in different directions, such as left, center, and right, the system can compare the measured intensity values and estimate the direction of the flame. Therefore, MOD-01 provides the physical sensing basis for directional flame localization.
+
+\subsection{Inputs and Outputs}
+
+\textbf{Inputs:}
+\begin{itemize}[leftmargin=1.2cm]
+    \item infrared flame energy from the environment,
+    \item supply voltage,
+    \item physical sensor orientation.
+\end{itemize}
+
+\textbf{Outputs:}
+\begin{itemize}[leftmargin=1.2cm]
+    \item raw analog intensity values,
+    \item optional digital threshold outputs, if used.
+\end{itemize}
+
+\textbf{Output Destination:}  
+The output of MOD-01 is sent to \textbf{MOD-02 (Flame Detection Software)} for filtering, thresholding, and direction estimation.
+
+\subsection{Connection to Other Modules}
+
+MOD-01 directly communicates with MOD-02 by supplying raw flame sensor values. MOD-02 then processes this data and forwards flame-related information to the autonomy layer. Therefore, MOD-01 is part of the following processing chain:
+
+\begin{center}
+\textbf{MOD-01 $\rightarrow$ MOD-02 $\rightarrow$ MOD-07}
+\end{center}
+
+This means that MOD-01 indirectly affects rover navigation and suppression decisions, even though it does not control those modules directly.
+
+\subsection{Technical Design Notes}
+
+The following design considerations were taken into account during the implementation of MOD-01:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item sensor placement was selected to maximize field of view,
+    \item wiring was arranged to reduce electrical noise,
+    \item analog output was preferred because it provides richer intensity information,
+    \item care was taken to reduce false readings caused by ambient light,
+    \item sensor orientation and spacing were adjusted to improve reliability.
+\end{itemize}
+
+\subsection{Possible Problems and Limitations}
+
+Potential issues for MOD-01 include:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item false positives caused by strong ambient light,
+    \item sensitivity to sunlight or reflective surfaces,
+    \item unstable readings due to electrical noise,
+    \item incorrect direction estimation if sensor placement is poor.
+\end{itemize}
+
+\subsection{Testing and Verification}
+
+The following tests are planned for MOD-01:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item checking whether each sensor produces valid output,
+    \item comparing readings for left, center, and right flame positions,
+    \item testing under different light conditions,
+    \item verifying successful data transfer to MOD-02.
+\end{itemize}
+
+\section{MOD-03 -- Locomotion Hardware}
+
+\subsection{Module Purpose}
+
+MOD-03 is responsible for the physical movement infrastructure of the rover. This includes the motor driver, DC motors, wheel assembly, and the electrical connections required for motion.
+
+This module is the hardware execution layer of the movement subsystem. It receives low-level motion control signals and converts them into real motor actuation.
+
+\subsection{Main Responsibilities}
+
+The responsibilities of MOD-03 include:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item chassis assembly,
+    \item motor mounting,
+    \item motor driver wiring,
+    \item battery and power connection setup,
+    \item enabling directional motor control,
+    \item enabling PWM-based speed control.
+\end{itemize}
+
+\subsection{Working Principle}
+
+The locomotion subsystem uses a differential drive mechanism. The motor driver receives control inputs from the microcontroller, including direction and PWM-based speed commands. These control signals are then translated into motor actuation for the left and right wheels.
+
+By changing the speed and direction of each motor independently, the rover can move forward, backward, turn left, turn right, or stop. MOD-03 therefore provides the physical actuation required for navigation.
+
+\subsection{Inputs and Outputs}
+
+\textbf{Inputs:}
+\begin{itemize}[leftmargin=1.2cm]
+    \item PWM signals from the control software,
+    \item motor direction control signals,
+    \item battery power.
+\end{itemize}
+
+\textbf{Outputs:}
+\begin{itemize}[leftmargin=1.2cm]
+    \item wheel rotation,
+    \item rover movement in the physical environment.
+\end{itemize}
+
+\textbf{Input Source:}  
+Low-level motion signals are received from \textbf{MOD-04 (Motion Control Software)}.
+
+\subsection{Connection to Other Modules}
+
+MOD-03 receives actuation signals from MOD-04, which converts higher-level motion commands into motor-specific low-level outputs. Therefore, MOD-03 is part of the following control chain:
+
+\begin{center}
+\textbf{MOD-07 $\rightarrow$ MOD-04 $\rightarrow$ MOD-03}
+\end{center}
+
+In this structure:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item MOD-07 decides what the rover should do,
+    \item MOD-04 translates this decision into motor commands,
+    \item MOD-03 physically executes the movement.
+\end{itemize}
+
+\subsection{Technical Design Notes}
+
+The following design decisions were considered in MOD-03:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item differential drive was selected because it is simple and suitable for rover navigation,
+    \item the L298N driver was used to control two DC motors independently,
+    \item PWM control allows adjustable speed instead of only ON/OFF operation,
+    \item wheel alignment and chassis stability were considered during assembly.
+\end{itemize}
+
+\subsection{Possible Problems and Limitations}
+
+Potential issues for MOD-03 include:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item wheel slipping during sudden starts,
+    \item imbalance between left and right motors,
+    \item battery voltage drop reducing motor performance,
+    \item chassis vibration affecting movement stability,
+    \item motor driver inefficiency or overheating under load.
+\end{itemize}
+
+\subsection{Testing and Verification}
+
+The following tests are planned for MOD-03:
+
+\begin{itemize}[leftmargin=1.2cm]
+    \item checking forward and backward motion,
+    \item checking left and right turning behavior,
+    \item verifying stop response,
+    \item verifying PWM-based speed adjustment,
+    \item testing motor direction consistency,
+    \item checking movement stability under battery power.
+\end{itemize}
+
+\section{Importance of These Modules in the Overall System}
+
+Both modules are essential for the success of the rover project.
+
+Without MOD-01, the rover cannot sense flame presence or estimate flame direction reliably. Without MOD-03, the rover cannot physically move toward the fire source.
+
+Together, these modules connect perception and action in the rover. MOD-01 supports environmental understanding, while MOD-03 enables physical response.
+
+\section{Conclusion}
+
+In conclusion, MOD-01 and MOD-03 are two core hardware modules of the autonomous fire detection and suppression rover. MOD-01 is responsible for collecting flame-related sensor information, while MOD-03 is responsible for executing physical movement commands.
+
+Their interaction with software modules allows the rover to sense the environment and act accordingly. For this reason, the technical explanation of these modules must include not only their components, but also their interfaces, data flow, reliability concerns, and contribution to the overall embedded system.
+
+\end{document}
