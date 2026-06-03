@@ -15,6 +15,7 @@ from flask_socketio import SocketIO
 from rover.config import PI_DIR
 
 TEMPLATES_DIR = PI_DIR / "templates"
+STATIC_DIR    = PI_DIR / "static"
 
 
 def create_app(state):
@@ -24,7 +25,8 @@ def create_app(state):
     because they need the controller, which is built after the logger that
     depends on this socketio instance.
     """
-    app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
+    app = Flask(__name__, template_folder=str(TEMPLATES_DIR),
+                static_folder=str(STATIC_DIR))
     app.config["SECRET_KEY"] = "rover-dash"
     socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 

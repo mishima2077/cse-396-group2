@@ -5,157 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rover Dashboard</title>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #0d1117; color: #e6edf3;
-    font-family: 'Segoe UI', monospace;
-    display: flex; flex-direction: column; height: 100vh;
-  }
-
-  /* ── Header ── */
-  header {
-    background: #161b22; border-bottom: 1px solid #30363d;
-    padding: 10px 20px; display: flex; align-items: center; gap: 16px;
-  }
-  header h1 { font-size: 1.1rem; font-weight: 600; color: #58a6ff; }
-  #conn-badge {
-    font-size: 0.75rem; padding: 3px 10px; border-radius: 12px;
-    background: #21262d; border: 1px solid #30363d; color: #8b949e;
-  }
-  #conn-badge.connected { background: #0d3321; border-color: #238636; color: #3fb950; }
-
-  /* ── Mode toggle ── */
-  .mode-wrap { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-  #mode-badge {
-    font-size: 0.75rem; font-weight: 700; padding: 3px 10px;
-    border-radius: 12px; letter-spacing: 0.06em;
-    background: #0d3321; border: 1px solid #238636; color: #3fb950;
-    transition: background 0.2s, border-color 0.2s, color 0.2s;
-  }
-  #mode-badge.manual {
-    background: #1a2a4a; border-color: #1f6feb; color: #58a6ff;
-  }
-  .toggle-switch { position: relative; display: inline-block; width: 44px; height: 22px; flex-shrink: 0; }
-  .toggle-switch input { display: none; }
-  .toggle-track {
-    position: absolute; inset: 0;
-    background: #21262d; border: 1px solid #30363d; border-radius: 11px;
-    cursor: pointer; transition: background 0.2s, border-color 0.2s;
-  }
-  .toggle-track:before {
-    content: ''; position: absolute;
-    width: 16px; height: 16px; left: 2px; top: 2px;
-    background: #8b949e; border-radius: 50%;
-    transition: transform 0.2s, background 0.2s;
-  }
-  .toggle-switch input:checked + .toggle-track { background: #1f3a5a; border-color: #1f6feb; }
-  .toggle-switch input:checked + .toggle-track:before { transform: translateX(22px); background: #58a6ff; }
-  .toggle-label { font-size: 0.78rem; color: #8b949e; }
-
-  /* ── Disabled controls overlay ── */
-  #controls-card.auto-locked {
-    position: relative;
-  }
-  #controls-card.auto-locked::after {
-    content: 'AUTO MODE — enable Manual Control to interact';
-    position: absolute; inset: 0; border-radius: 8px;
-    background: rgba(13,17,23,0.55);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.7rem; color: #8b949e; letter-spacing: 0.04em;
-    text-transform: uppercase; text-align: center; padding: 0 16px;
-    pointer-events: all; cursor: not-allowed;
-  }
-
-  /* ── Main grid ── */
-  main {
-    flex: 1; display: grid;
-    grid-template-columns: 1fr 340px;
-    grid-template-rows: 1fr auto;
-    gap: 12px; padding: 12px; overflow: hidden;
-  }
-
-  /* ── Video panel ── */
-  #video-panel {
-    grid-row: 1 / 3;
-    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  #video-panel .panel-title { padding: 8px 14px; font-size: 0.8rem; color: #8b949e; border-bottom: 1px solid #21262d; }
-  #video-panel img {
-    flex: 1; width: 100%; object-fit: contain; background: #000;
-  }
-
-  /* ── Right column ── */
-  #right-col {
-    display: flex; flex-direction: column; gap: 12px; overflow-y: auto;
-  }
-
-  /* ── Cards ── */
-  .card {
-    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-    padding: 14px;
-  }
-  .card-title { font-size: 0.75rem; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
-
-  /* ── Distance gauges ── */
-  #distances { display: flex; gap: 10px; justify-content: space-between; }
-  .dist-item { flex: 1; text-align: center; }
-  .dist-label { font-size: 0.7rem; color: #8b949e; margin-bottom: 4px; }
-  .dist-value { font-size: 1.6rem; font-weight: 700; font-family: monospace; }
-  .dist-unit  { font-size: 0.7rem; color: #8b949e; }
-  .dist-bar { height: 4px; border-radius: 2px; background: #21262d; margin-top: 6px; }
-  .dist-fill { height: 100%; border-radius: 2px; transition: width 0.2s; }
-
-  /* ── Flame indicator ── */
-  #flame-indicator {
-    display: flex; align-items: center; gap: 12px;
-  }
-  #flame-dot {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: #238636; transition: background 0.3s;
-    box-shadow: 0 0 0 0 rgba(35,134,54,0);
-  }
-  #flame-dot.alert {
-    background: #da3633;
-    animation: pulse 0.8s infinite;
-  }
-  @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(218,54,51,0.7); }
-    70%  { box-shadow: 0 0 0 10px rgba(218,54,51,0); }
-    100% { box-shadow: 0 0 0 0 rgba(218,54,51,0); }
-  }
-  #flame-text { font-size: 1rem; font-weight: 600; }
-  #flame-analog { font-size: 0.75rem; color: #8b949e; margin-left: auto; }
-
-  /* ── Controls ── */
-  #controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  #controls button {
-    padding: 10px 0; border-radius: 6px; border: 1px solid #30363d;
-    background: #21262d; color: #e6edf3; cursor: pointer; font-size: 0.85rem;
-    transition: background 0.15s;
-  }
-  #controls button:hover { background: #30363d; }
-  #controls button:active { background: #388bfd22; }
-  #controls button.danger { border-color: #da3633; color: #da3633; }
-  #controls button.danger:hover { background: #da363322; }
-  #controls .full-row { grid-column: 1 / -1; }
-  #controls .pump-row { grid-column: 1 / -1; display: flex; gap: 8px; }
-  #controls .pump-row button { flex: 1; border-color: #1f6feb; color: #58a6ff; }
-  #controls .pump-row button:hover { background: #1f6feb22; }
-
-  /* ── Log ── */
-  #log-box {
-    height: 200px; overflow-y: auto;
-    font-size: 0.72rem; color: #8b949e; font-family: monospace;
-    background: #0d1117; border-radius: 4px; padding: 6px; margin-top: 4px;
-  }
-  #log-box div { line-height: 1.6; border-bottom: 1px solid #21262d; padding: 1px 0; }
-  #log-box div.warn  { color: #d29922; }
-  #log-box div.info  { color: #3fb950; }
-  #log-box div.fire  { color: #da3633; font-weight: 600; }
-  #log-box div.cmd   { color: #58a6ff; }
-</style>
+<link rel="stylesheet" href="/static/css/dashboard.css">
 </head>
 <body>
 
@@ -170,15 +20,19 @@
     </label>
     <span class="toggle-label">Manual</span>
   </div>
+  <div class="run-wrap">
+    <span id="run-timer">●REC 0:00</span>
+    <button id="run-btn" onclick="toggleRun()">▶ Start Run</button>
+  </div>
 </header>
 
 <main>
-
   <!-- Video -->
   <div id="video-panel">
     <div class="panel-title">Live Camera · YOLO Detection</div>
     <img id="video-img" src="/video_feed" alt="video feed">
   </div>
+
   <!-- Right column -->
   <div id="right-col">
 
@@ -210,35 +64,31 @@
     <!-- YOLO Fire Detection -->
     <div class="card">
       <div class="card-title">YOLO Fire Detection</div>
-      <div id="flame-indicator" style="margin-bottom:8px;">
-        <div id="yolo-dot" style="width:20px;height:20px;border-radius:50%;background:#238636;transition:background 0.3s;flex-shrink:0;"></div>
-        <div id="yolo-text" style="font-size:1rem;font-weight:600;color:#3fb950;">No Fire</div>
+      <div class="flame-row" style="margin-bottom:8px;">
+        <div id="yolo-dot" class="flame-dot"></div>
+        <div id="yolo-text" class="flame-label" style="color:#3fb950;">No Fire</div>
         <div id="yolo-count" style="font-size:0.75rem;color:#8b949e;margin-left:auto;">Count: 0</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.78rem;font-family:monospace;">
-        <div style="color:#8b949e;">Center X</div>
-        <div id="fire-cx" style="color:#58a6ff;">—</div>
-        <div style="color:#8b949e;">Center Y</div>
-        <div id="fire-cy" style="color:#58a6ff;">—</div>
-        <div style="color:#8b949e;">Deviation</div>
-        <div id="fire-dev" style="color:#d29922;">—</div>
-        <div style="color:#8b949e;">Confidence</div>
-        <div id="fire-conf" style="color:#3fb950;">—</div>
+        <div style="color:#8b949e;">Center X</div>  <div id="fire-cx"   style="color:#58a6ff;">—</div>
+        <div style="color:#8b949e;">Center Y</div>  <div id="fire-cy"   style="color:#58a6ff;">—</div>
+        <div style="color:#8b949e;">Deviation</div> <div id="fire-dev"  style="color:#d29922;">—</div>
+        <div style="color:#8b949e;">Confidence</div><div id="fire-conf" style="color:#3fb950;">—</div>
       </div>
     </div>
 
     <!-- Flame Sensor (Arduino) -->
     <div class="card">
       <div class="card-title">Flame Sensor (Arduino)</div>
-      <div id="flame-indicator">
-        <div id="flame-dot"></div>
-        <div id="flame-text">No Fire</div>
-        <div id="flame-analog">ADC: —</div>
+      <div class="flame-row">
+        <div id="flame-dot" class="flame-dot"></div>
+        <div id="flame-text" class="flame-label">No Fire</div>
+        <div id="flame-analog" class="flame-adc">ADC: —</div>
       </div>
     </div>
 
-    <!-- Controls -->
-    <div class="card auto-locked" id="controls-card" style="position:relative;">
+    <!-- Motor Controls -->
+    <div class="card auto-locked" id="controls-card">
       <div class="card-title">Motor Controls</div>
       <div id="controls">
         <div></div>
@@ -254,11 +104,11 @@
           <button onclick="cmd('PUMP_ON')">💧 Pump ON</button>
           <button onclick="cmd('PUMP_OFF')">🚫 Pump OFF</button>
         </div>
-        <div class="full-row" id="speed-row" style="margin-top:8px;">
+        <div class="full-row" style="margin-top:8px;">
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:0.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;">Speed</span>
-            <input id="speed-slider" type="range" min="0" max="255" value="255"
-              style="flex:1;" oninput="document.getElementById('speed-val').textContent=this.value;">
+            <input id="speed-slider" type="range" min="0" max="255" value="255" style="flex:1;"
+              oninput="document.getElementById('speed-val').textContent=this.value;">
             <span id="speed-val" style="font-size:0.95rem;font-weight:700;font-family:monospace;color:#58a6ff;min-width:32px;text-align:right;">255</span>
           </div>
         </div>
@@ -274,171 +124,60 @@
   </div>
 </main>
 
-<script>
-const MAX_SENSOR = 340;
+<!-- Results overlay -->
+<div id="overlay">
+  <div id="overlay-inner">
+    <div id="overlay-header">
+      <h2>Run Report</h2>
+      <span class="run-meta" id="overlay-meta"></span>
+      <div class="spacer"></div>
+      <button id="btn-close-overlay" onclick="closeOverlay()">✕ Back to Live</button>
+    </div>
+    <div id="overlay-body">
+      <div id="map-col">
+        <canvas id="map-canvas"></canvas>
+        <div id="map-legend">
+          <span class="legend-item">● <span>Start / End</span></span>
+          <span class="legend-item">🔥 <span>Fire detected</span></span>
+          <span class="legend-item">🎯 <span>Arrived</span></span>
+          <span class="legend-item">💧 <span>Extinguished</span></span>
+          <span class="legend-item">⛔ <span>Obstacle</span></span>
+          <span class="legend-item">🔍 <span>360° scan</span></span>
+        </div>
+      </div>
+      <div id="results-col">
+        <div id="stats-section">
+          <h3>Run Summary</h3>
+          <div id="stats-grid">
+            <div class="stat-item"><div class="stat-label">Duration</div>   <div class="stat-value"            id="stat-duration">—</div></div>
+            <div class="stat-item"><div class="stat-label">Distance</div>   <div class="stat-value"            id="stat-distance">—</div></div>
+            <div class="stat-item"><div class="stat-label">Fires Found</div><div class="stat-value fire-color" id="stat-fires">—</div></div>
+            <div class="stat-item"><div class="stat-label">Extinguished</div><div class="stat-value ok-color"  id="stat-ext">—</div></div>
+            <div class="stat-item"><div class="stat-label">Obstacles</div>  <div class="stat-value warn-color" id="stat-obs">—</div></div>
+            <div class="stat-item"><div class="stat-label">360° Scans</div> <div class="stat-value"            id="stat-scans">—</div></div>
+          </div>
+        </div>
+        <div id="timeline-section">
+          <h3>Event Timeline</h3>
+          <div id="timeline-list"></div>
+        </div>
+      </div>
+    </div>
+    <div id="overlay-footer">
+      <button onclick="exportJSON()">⬇ Export JSON</button>
+      <button onclick="exportPNG()">⬇ Export Map PNG</button>
+      <div style="flex:1"></div>
+      <button id="btn-new-run" onclick="newRun()">▶ New Run</button>
+    </div>
+  </div>
+</div>
 
-// ── Socket ────────────────────────────────────────────────────────────────────
-const socket = io();
+<div id="map-tooltip"></div>
 
-socket.on('connect', () => {
-  const b = document.getElementById('conn-badge');
-  b.textContent = '● Connected';
-  b.classList.add('connected');
-  addLog('Connected to rover server', 'info');
-});
-
-socket.on('disconnect', () => {
-  const b = document.getElementById('conn-badge');
-  b.textContent = '● Disconnected';
-  b.classList.remove('connected');
-  addLog('Disconnected', 'warn');
-});
-
-socket.on('sensor', (data) => {
-  updateDistances(data);
-  updateFlame(data);
-});
-
-socket.on('fire_yolo', (data) => {
-  const dot  = document.getElementById('yolo-dot');
-  const text = document.getElementById('yolo-text');
-  const cnt  = document.getElementById('yolo-count');
-  cnt.textContent = 'Count: ' + data.count;
-  if (data.detected) {
-    dot.style.background = '#da3633';
-    dot.style.animation = 'pulse 0.8s infinite';
-    dot.style.boxShadow = '0 0 0 0 rgba(218,54,51,0.7)';
-    text.textContent = '🔥 FIRE DETECTED';
-    text.style.color = '#da3633';
-  } else {
-    dot.style.background = '#238636';
-    dot.style.animation = '';
-    dot.style.boxShadow = '';
-    text.textContent = 'No Fire';
-    text.style.color = '#3fb950';
-  }
-  // Coordinates
-  const fmt = v => v !== null && v !== undefined ? v : '—';
-  document.getElementById('fire-cx').textContent   = fmt(data.cx);
-  document.getElementById('fire-cy').textContent   = fmt(data.cy);
-  const dev = data.deviation;
-  const devEl = document.getElementById('fire-dev');
-  devEl.textContent = dev !== null && dev !== undefined
-    ? (dev > 0 ? '+' : '') + dev + 'px'
-    : '—';
-  devEl.style.color = dev !== null && dev !== undefined
-    ? (Math.abs(dev) <= 40 ? '#3fb950' : '#d29922')
-    : '#8b949e';
-  document.getElementById('fire-conf').textContent = data.conf !== null ? (data.conf * 100).toFixed(0) + '%' : '—';
-});
-
-socket.on('log', (data) => addLog(data.msg, data.cls || ''));
-
-const MOTION_CMDS = new Set(['FWD', 'REV', 'TURN_L', 'TURN_R']);
-
-function cmd(c) {
-  if (MOTION_CMDS.has(c)) {
-    const speed = parseInt(document.getElementById('speed-slider').value, 10);
-    socket.emit('command', {cmd: c, speed: speed});
-    addLog('→ ' + c + ' @' + speed, 'cmd');
-  } else {
-    socket.emit('command', {cmd: c});
-    addLog('→ ' + c, 'cmd');
-  }
-}
-
-// ── Distance display ──────────────────────────────────────────────────────────
-function updateDistances(d) {
-  setDist('left',   d.left);
-  setDist('center', d.center);
-  setDist('right',  d.right);
-}
-
-function setDist(side, val) {
-  const el  = document.getElementById('d-' + side);
-  const bar = document.getElementById('bar-' + side);
-  el.textContent = val || '—';
-  const pct = Math.min(100, (val / MAX_SENSOR) * 100);
-  bar.style.width = pct + '%';
-  // color: red < 30cm, yellow < 80cm, green otherwise
-  const color = val < 30 ? '#da3633' : val < 80 ? '#d29922' : '#3fb950';
-  bar.style.background = color;
-  el.style.color = val < 30 ? '#da3633' : '#e6edf3';
-}
-
-// ── Flame display ─────────────────────────────────────────────────────────────
-function updateFlame(d) {
-  const dot  = document.getElementById('flame-dot');
-  const text = document.getElementById('flame-text');
-  const adc  = document.getElementById('flame-analog');
-  adc.textContent = 'ADC: ' + d.flame_a;
-
-  // flame_digital: 0 = fire detected (active LOW)
-  if (d.flame_d === 0) {
-    dot.classList.add('alert');
-    text.textContent = '🔥 FIRE DETECTED';
-    text.style.color = '#da3633';
-  } else {
-    dot.classList.remove('alert');
-    text.textContent = 'No Fire';
-    text.style.color = '#3fb950';
-  }
-}
-
-
-// ── Log ───────────────────────────────────────────────────────────────────────
-function addLog(msg, cls = '') {
-  const box = document.getElementById('log-box');
-  const d   = document.createElement('div');
-  if (cls) d.className = cls;
-  const ts  = new Date().toLocaleTimeString('tr');
-  d.textContent = `[${ts}] ${msg}`;
-  box.appendChild(d);
-  box.scrollTop = box.scrollHeight;
-  // Keep last 100 lines
-  while (box.children.length > 100) box.removeChild(box.firstChild);
-}
-
-// ── Mode management ───────────────────────────────────────────────────────────
-let isManual = false;
-
-socket.on('mode_changed', (data) => {
-  applyMode(data.manual);
-});
-
-function setMode(manual) {
-  socket.emit('set_mode', { manual });
-}
-
-function applyMode(manual) {
-  isManual = manual;
-  const badge   = document.getElementById('mode-badge');
-  const toggle  = document.getElementById('manual-toggle');
-  const card    = document.getElementById('controls-card');
-
-  toggle.checked = manual;
-
-  if (manual) {
-    badge.textContent = 'MANUAL';
-    badge.classList.add('manual');
-    card.classList.remove('auto-locked');
-  } else {
-    badge.textContent = 'AUTO';
-    badge.classList.remove('manual');
-    card.classList.add('auto-locked');
-  }
-}
-
-// ── Keyboard shortcuts ────────────────────────────────────────────────────────
-document.addEventListener('keydown', (e) => {
-  if (!isManual) return;
-  const map = {
-    'ArrowUp': 'FWD', 'ArrowDown': 'REV',
-    'ArrowLeft': 'TURN_L', 'ArrowRight': 'TURN_R',
-    ' ': 'STOP',
-  };
-  if (map[e.key]) { e.preventDefault(); cmd(map[e.key]); }
-});
-</script>
+<!-- load order: ui → controls → map → recorder -->
+<script src="/static/js/ui.js"></script>
+<script src="/static/js/controls.js"></script>
+<script src="/static/js/map.js"></script>
+<script src="/static/js/recorder.js"></script>
 </body>
 </html>
