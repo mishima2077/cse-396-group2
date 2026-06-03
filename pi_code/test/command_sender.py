@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simple command sender for the rover.
-Sends motor and pump commands to Arduino via serial.
+Sends motor, pump, and servo commands to Arduino via serial.
 
 Usage:
     python3 command_sender.py [port] [baud]
@@ -10,6 +10,7 @@ Interactive mode:
     Enter commands:
       fwd, rev, left, right, stop
       pump_on, pump_off
+      servo <0-180>
       exit
 
 Default port: /dev/ttyUSB0 (auto-detect)
@@ -61,6 +62,18 @@ def normalize_command(cmd):
 
     if cmd in aliases:
         return aliases[cmd]
+
+    if cmd.startswith('SERVO ') or cmd.startswith('SRV '):
+        parts = cmd.split()
+        try:
+            angle = int(parts[1])
+            if 0 <= angle <= 180:
+                return f"SERVO,{angle}"
+            print(f"  ! Angle out of range: {angle} (must be 0-180)")
+        except (ValueError, IndexError):
+            print("  ! Usage: servo <0-180>")
+        return None
+
     return None
 
 def print_help():
@@ -72,6 +85,8 @@ def print_help():
     print("  stop, s              - Stop motors")
     print("  pump_on, pon         - Start water pump")
     print("  pump_off, poff       - Stop water pump")
+    print("  servo <0-180>        - Set hose servo angle")
+    print("  srv <0-180>          - Set hose servo angle (short)")
     print("  help                 - Show this message")
     print("  exit, quit           - Exit program")
     print()

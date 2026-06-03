@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rover Dashboard</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1117; color: #e6edf3;
+    font-family: 'Segoe UI', monospace;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: #161b22; border-bottom: 1px solid #30363d;
+    padding: 10px 20px; display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 1.1rem; font-weight: 600; color: #58a6ff; }
+  #conn-badge {
+    font-size: 0.75rem; padding: 3px 10px; border-radius: 12px;
+    background: #21262d; border: 1px solid #30363d; color: #8b949e;
+  }
+  #conn-badge.connected { background: #0d3321; border-color: #238636; color: #3fb950; }
+
+  /* ── Main grid ── */
+  main {
+    flex: 1; display: grid;
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: 1fr auto;
+    gap: 12px; padding: 12px; overflow: hidden;
+  }
+
+  /* ── Video panel ── */
+  #video-panel {
+    grid-row: 1 / 3;
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #video-panel .panel-title { padding: 8px 14px; font-size: 0.8rem; color: #8b949e; border-bottom: 1px solid #21262d; }
+  #video-panel img {
+    flex: 1; width: 100%; object-fit: contain; background: #000;
+  }
+
+  /* ── Right column ── */
+  #right-col {
+    display: flex; flex-direction: column; gap: 12px; overflow-y: auto;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 14px;
+  }
+  .card-title { font-size: 0.75rem; color: #8b949e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* ── Distance gauges ── */
+  #distances { display: flex; gap: 10px; justify-content: space-between; }
+  .dist-item { flex: 1; text-align: center; }
+  .dist-label { font-size: 0.7rem; color: #8b949e; margin-bottom: 4px; }
+  .dist-value { font-size: 1.6rem; font-weight: 700; font-family: monospace; }
+  .dist-unit  { font-size: 0.7rem; color: #8b949e; }
+  .dist-bar { height: 4px; border-radius: 2px; background: #21262d; margin-top: 6px; }
+  .dist-fill { height: 100%; border-radius: 2px; transition: width 0.2s; }
+
+  /* ── Flame indicator ── */
+  #flame-indicator {
+    display: flex; align-items: center; gap: 12px;
+  }
+  #flame-dot {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #238636; transition: background 0.3s;
+    box-shadow: 0 0 0 0 rgba(35,134,54,0);
+  }
+  #flame-dot.alert {
+    background: #da3633;
+    animation: pulse 0.8s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(218,54,51,0.7); }
+    70%  { box-shadow: 0 0 0 10px rgba(218,54,51,0); }
+    100% { box-shadow: 0 0 0 0 rgba(218,54,51,0); }
+  }
+  #flame-text { font-size: 1rem; font-weight: 600; }
+  #flame-analog { font-size: 0.75rem; color: #8b949e; margin-left: auto; }
+
+  /* ── Controls ── */
+  #controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  #controls button {
+    padding: 10px 0; border-radius: 6px; border: 1px solid #30363d;
+    background: #21262d; color: #e6edf3; cursor: pointer; font-size: 0.85rem;
+    transition: background 0.15s;
+  }
+  #controls button:hover { background: #30363d; }
+  #controls button:active { background: #388bfd22; }
+  #controls button.danger { border-color: #da3633; color: #da3633; }
+  #controls button.danger:hover { background: #da363322; }
+  #controls .full-row { grid-column: 1 / -1; }
+  #controls .pump-row { grid-column: 1 / -1; display: flex; gap: 8px; }
+  #controls .pump-row button { flex: 1; border-color: #1f6feb; color: #58a6ff; }
+  #controls .pump-row button:hover { background: #1f6feb22; }
+
+  /* ── Log ── */
+  #log-box {
+    height: 200px; overflow-y: auto;
+    font-size: 0.72rem; color: #8b949e; font-family: monospace;
+    background: #0d1117; border-radius: 4px; padding: 6px; margin-top: 4px;
+  }
+  #log-box div { line-height: 1.6; border-bottom: 1px solid #21262d; padding: 1px 0; }
+  #log-box div.warn  { color: #d29922; }
+  #log-box div.info  { color: #3fb950; }
+  #log-box div.fire  { color: #da3633; font-weight: 600; }
+  #log-box div.cmd   { color: #58a6ff; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚗 Rover Dashboard</h1>
+  <span id="conn-badge">● Disconnected</span>
+</header>
+
+<main>
+
+  <!-- Video -->
+  <div id="video-panel">
+    <div class="panel-title">Live Camera · YOLO Detection</div>
+    <img id="video-img" src="/video_feed" alt="video feed">
+  </div>
+  <!-- Right column -->
+  <div id="right-col">
+
+    <!-- Distances -->
+    <div class="card">
+      <div class="card-title">Distance Sensors (cm)</div>
+      <div id="distances">
+        <div class="dist-item">
+          <div class="dist-label">LEFT</div>
+          <div class="dist-value" id="d-left">—</div>
+          <div class="dist-unit">cm</div>
+          <div class="dist-bar"><div class="dist-fill" id="bar-left" style="width:0%;background:#58a6ff"></div></div>
+        </div>
+        <div class="dist-item">
+          <div class="dist-label">CENTER</div>
+          <div class="dist-value" id="d-center">—</div>
+          <div class="dist-unit">cm</div>
+          <div class="dist-bar"><div class="dist-fill" id="bar-center" style="width:0%;background:#3fb950"></div></div>
+        </div>
+        <div class="dist-item">
+          <div class="dist-label">RIGHT</div>
+          <div class="dist-value" id="d-right">—</div>
+          <div class="dist-unit">cm</div>
+          <div class="dist-bar"><div class="dist-fill" id="bar-right" style="width:0%;background:#d29922"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- YOLO Fire Detection -->
+    <div class="card">
+      <div class="card-title">YOLO Fire Detection</div>
+      <div id="flame-indicator" style="margin-bottom:8px;">
+        <div id="yolo-dot" style="width:20px;height:20px;border-radius:50%;background:#238636;transition:background 0.3s;flex-shrink:0;"></div>
+        <div id="yolo-text" style="font-size:1rem;font-weight:600;color:#3fb950;">No Fire</div>
+        <div id="yolo-count" style="font-size:0.75rem;color:#8b949e;margin-left:auto;">Count: 0</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.78rem;font-family:monospace;">
+        <div style="color:#8b949e;">Center X</div>
+        <div id="fire-cx" style="color:#58a6ff;">—</div>
+        <div style="color:#8b949e;">Center Y</div>
+        <div id="fire-cy" style="color:#58a6ff;">—</div>
+        <div style="color:#8b949e;">Deviation</div>
+        <div id="fire-dev" style="color:#d29922;">—</div>
+        <div style="color:#8b949e;">Confidence</div>
+        <div id="fire-conf" style="color:#3fb950;">—</div>
+      </div>
+    </div>
+
+    <!-- Flame Sensor (Arduino) -->
+    <div class="card">
+      <div class="card-title">Flame Sensor (Arduino)</div>
+      <div id="flame-indicator">
+        <div id="flame-dot"></div>
+        <div id="flame-text">No Fire</div>
+        <div id="flame-analog">ADC: —</div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card">
+      <div class="card-title">Motor Controls</div>
+      <div id="controls">
+        <div></div>
+        <button onclick="cmd('FWD')">▲ FWD</button>
+        <div></div>
+        <button onclick="cmd('TURN_L')">◀ LEFT</button>
+        <button class="danger" onclick="cmd('STOP')">■ STOP</button>
+        <button onclick="cmd('TURN_R')">RIGHT ▶</button>
+        <div></div>
+        <button onclick="cmd('REV')">▼ REV</button>
+        <div></div>
+        <div class="pump-row">
+          <button onclick="cmd('PUMP_ON')">💧 Pump ON</button>
+          <button onclick="cmd('PUMP_OFF')">🚫 Pump OFF</button>
+        </div>
+        <div class="full-row" style="display:flex;gap:8px;margin-top:4px;">
+          <input id="servo-angle" type="number" min="0" max="180" value="90"
+            style="flex:1;padding:8px;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#e6edf3;font-size:0.85rem;text-align:center;"
+            placeholder="0-180°">
+          <button onclick="sendServo()" style="flex:1;border-color:#8b949e;color:#e6edf3;">
+            ⚙ Servo Turn
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <div class="card-title">System Log</div>
+      <div id="log-box"></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+const MAX_SENSOR = 340;
+
+// ── Socket ────────────────────────────────────────────────────────────────────
+const socket = io();
+
+socket.on('connect', () => {
+  const b = document.getElementById('conn-badge');
+  b.textContent = '● Connected';
+  b.classList.add('connected');
+  addLog('Connected to rover server', 'info');
+});
+
+socket.on('disconnect', () => {
+  const b = document.getElementById('conn-badge');
+  b.textContent = '● Disconnected';
+  b.classList.remove('connected');
+  addLog('Disconnected', 'warn');
+});
+
+socket.on('sensor', (data) => {
+  updateDistances(data);
+  updateFlame(data);
+});
+
+socket.on('fire_yolo', (data) => {
+  const dot  = document.getElementById('yolo-dot');
+  const text = document.getElementById('yolo-text');
+  const cnt  = document.getElementById('yolo-count');
+  cnt.textContent = 'Count: ' + data.count;
+  if (data.detected) {
+    dot.style.background = '#da3633';
+    dot.style.animation = 'pulse 0.8s infinite';
+    dot.style.boxShadow = '0 0 0 0 rgba(218,54,51,0.7)';
+    text.textContent = '🔥 FIRE DETECTED';
+    text.style.color = '#da3633';
+  } else {
+    dot.style.background = '#238636';
+    dot.style.animation = '';
+    dot.style.boxShadow = '';
+    text.textContent = 'No Fire';
+    text.style.color = '#3fb950';
+  }
+  // Coordinates
+  const fmt = v => v !== null && v !== undefined ? v : '—';
+  document.getElementById('fire-cx').textContent   = fmt(data.cx);
+  document.getElementById('fire-cy').textContent   = fmt(data.cy);
+  const dev = data.deviation;
+  const devEl = document.getElementById('fire-dev');
+  devEl.textContent = dev !== null && dev !== undefined
+    ? (dev > 0 ? '+' : '') + dev + 'px'
+    : '—';
+  devEl.style.color = dev !== null && dev !== undefined
+    ? (Math.abs(dev) <= 40 ? '#3fb950' : '#d29922')
+    : '#8b949e';
+  document.getElementById('fire-conf').textContent = data.conf !== null ? (data.conf * 100).toFixed(0) + '%' : '—';
+});
+
+socket.on('log', (data) => addLog(data.msg, data.cls || ''));
+
+function cmd(c) {
+  socket.emit('command', {cmd: c});
+  addLog('→ ' + c, 'cmd');
+}
+
+// ── Distance display ──────────────────────────────────────────────────────────
+function updateDistances(d) {
+  setDist('left',   d.left);
+  setDist('center', d.center);
+  setDist('right',  d.right);
+}
+
+function setDist(side, val) {
+  const el  = document.getElementById('d-' + side);
+  const bar = document.getElementById('bar-' + side);
+  el.textContent = val || '—';
+  const pct = Math.min(100, (val / MAX_SENSOR) * 100);
+  bar.style.width = pct + '%';
+  // color: red < 30cm, yellow < 80cm, green otherwise
+  const color = val < 30 ? '#da3633' : val < 80 ? '#d29922' : '#3fb950';
+  bar.style.background = color;
+  el.style.color = val < 30 ? '#da3633' : '#e6edf3';
+}
+
+// ── Flame display ─────────────────────────────────────────────────────────────
+function updateFlame(d) {
+  const dot  = document.getElementById('flame-dot');
+  const text = document.getElementById('flame-text');
+  const adc  = document.getElementById('flame-analog');
+  adc.textContent = 'ADC: ' + d.flame_a;
+
+  // flame_digital: 0 = fire detected (active LOW)
+  if (d.flame_d === 0) {
+    dot.classList.add('alert');
+    text.textContent = '🔥 FIRE DETECTED';
+    text.style.color = '#da3633';
+  } else {
+    dot.classList.remove('alert');
+    text.textContent = 'No Fire';
+    text.style.color = '#3fb950';
+  }
+}
+
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+function addLog(msg, cls = '') {
+  const box = document.getElementById('log-box');
+  const d   = document.createElement('div');
+  if (cls) d.className = cls;
+  const ts  = new Date().toLocaleTimeString('tr');
+  d.textContent = `[${ts}] ${msg}`;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+  // Keep last 100 lines
+  while (box.children.length > 100) box.removeChild(box.firstChild);
+}
+
+// ── Servo control ─────────────────────────────────────────────────────────────
+function sendServo() {
+  const input = document.getElementById('servo-angle');
+  const angle = parseInt(input.value, 10);
+  if (isNaN(angle) || angle < 0 || angle > 180) {
+    addLog('Servo angle must be 0-180', 'warn');
+    return;
+  }
+  socket.emit('command', {cmd: `SERVO,${angle}`});
+  addLog(`→ SERVO,${angle}`, 'cmd');
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  const map = {
+    'ArrowUp': 'FWD', 'ArrowDown': 'REV',
+    'ArrowLeft': 'TURN_L', 'ArrowRight': 'TURN_R',
+    ' ': 'STOP',
+  };
+  if (map[e.key]) { e.preventDefault(); cmd(map[e.key]); }
+});
+</script>
+</body>
+</html>

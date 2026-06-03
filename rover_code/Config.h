@@ -41,4 +41,7 @@ constexpr unsigned long SONAR_TRIG_US = 10UL;
 // ---- Motor Speed Levels (PWM 0..255) -------------------------------------------
 constexpr uint8_t MOTOR_SPEED = 255;
 
+// ---- Servo (hose direction) ----------------------------------------------------
+constexpr uint8_t PIN_SERVO = 3;
+
 #endif // CONFIG_H
