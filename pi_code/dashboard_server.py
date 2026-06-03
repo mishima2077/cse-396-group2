@@ -29,7 +29,7 @@ import align_logic
 DEFAULT_MODEL  = Path(__file__).resolve().parent / "models" / "best.pt"
 HF_REPO        = "SalahALHaismawi/yolov26-fire-detection"
 HF_FILE        = "best.pt"
-ARDUINO_PORT   = "/dev/ttyUSB1"
+ARDUINO_PORT   = None   # auto-detect; override with --serial
 ARDUINO_BAUD   = 115200
 MAX_SPEED      = 255   # default PWM speed (0-255) for manual motion commands
 YOLO_CONF      = 0.60
@@ -89,6 +89,14 @@ def _ensure_model(local_path: Path) -> Path:
 
 
 # ── Serial helpers ────────────────────────────────────────────────────────────
+
+def find_serial_port() -> str | None:
+    for port in ["/dev/ttyUSB0", "/dev/ttyACM0", "/dev/ttyUSB1", "/dev/ttyACM1"]:
+        if Path(port).exists():
+            log(f"[SERIAL] Auto-detected {port}")
+            return port
+    return None
+
 
 def serial_connect(port: str, baud: int) -> serial.Serial | None:
     try:
@@ -386,7 +394,11 @@ def main():
         log("[YOLO] Disabled")
 
     # Serial
-    _serial = serial_connect(args.serial, args.baud)
+    serial_port = args.serial or find_serial_port()
+    if serial_port:
+        _serial = serial_connect(serial_port, args.baud)
+    else:
+        log("[SERIAL] No port found — running without Arduino")
 
     # Background threads
     t_serial = threading.Thread(target=serial_reader_thread, daemon=True)

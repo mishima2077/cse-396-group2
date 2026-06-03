@@ -21,21 +21,30 @@ Mission flow:
 
 import time
 
-# ── Motor speed ───────────────────────────────────────────────────────────────
-# New Arduino interface: motion commands are "CMD,SPEED" (speed 0-255).
-# For now every autonomous motion runs at full speed; later this becomes
-# dynamic (e.g. slow down near the fire / based on confidence).
-MAX_SPEED = 255
+# ── Motor speeds (new Arduino interface: "CMD,SPEED", 0-255) ──────────────────
+SPEED_ALIGN    = 50    # slow + precise while centering (turns only)
+SPEED_APPROACH = 200   # forward speed while driving toward fire
+SPEED_SCAN  = 50    # continuous 360° search-spin speed
+SPEED_IDLE  = 200   # free-roam / idle wandering speed
 
-# Pre-built motion command strings (STOP takes no speed argument).
-FWD    = f"FWD,{MAX_SPEED}"
-TURN_L = f"TURN_L,{MAX_SPEED}"
-TURN_R = f"TURN_R,{MAX_SPEED}"
+STOP = "STOP"   # stop takes no speed argument
+
+
+def _fwd(speed):    return f"FWD,{int(speed)}"
+def _turn_l(speed): return f"TURN_L,{int(speed)}"
+def _turn_r(speed): return f"TURN_R,{int(speed)}"
+
+
+# ── Hardcoded turn durations — MEASURE on rig at each speed, then edit ─────────
+# Each = motor-on time for that rotation at its speed tier (ms).
+TURN_90_ALIGN_MS = 6120    # 90° at SPEED_ALIGN(50)  — align centering turns
+TURN_90_IDLE_MS  = 1530    # 90° at SPEED_IDLE(200)  — roam avoidance turns
+TURN_180_IDLE_MS = 3060    # 180° at SPEED_IDLE(200) — roam u-turn
+SCAN_360_MS      = 24480   # 360° at SPEED_SCAN(50)  — search spin  ← measure & fix
 
 # ── Alignment tuning ──────────────────────────────────────────────────────────
 ALIGNMENT_THRESHOLD = 40      # px from center counted as "centered" (dead zone)
 REALIGN_THRESHOLD   = 80      # px drift during approach before re-centering
-TURN_90_MS          = 1200    # ms of motor turn = 90 degrees (measured)
 CAMERA_FOV          = 55      # camera horizontal field of view (degrees)
 HALF_FOV            = CAMERA_FOV / 2.0   # 27.5 deg maps to half-frame width
 SETTLE_TIME         = 0.35    # s to wait (stopped) after a turn before re-deciding
@@ -46,12 +55,7 @@ FIRE_LOST_GRACE     = 1.0     # s fire must stay gone before any search starts
 STOP_DISTANCE_CM    = 20      # front distance to stop in front of the fire
 APPROACH_TIMEOUT    = 8.0     # s max continuous forward without arriving (safety)
 
-# ── Search / scan tuning ──────────────────────────────────────────────────────
-SCAN_STEP_MS        = TURN_90_MS / 3.0   # ms of turn = 30 deg (one scan step)
-SCAN_SETTLE         = 0.4     # s stopped at each step so YOLO gets a clean look
-SCAN_STEPS_FULL     = 12      # 12 x 30 = 360 deg full sweep
-SCAN_STEP_DEG       = 360 // SCAN_STEPS_FULL
-TURN_180_MS         = TURN_90_MS * 2.0   # ms of turn = 180 deg (roam u-turn)
+# ── Free-roam tuning ──────────────────────────────────────────────────────────
 
 # ── Free-roam tuning ──────────────────────────────────────────────────────────
 OBSTACLE_CM         = 30      # front distance that counts as a blocking obstacle
@@ -60,9 +64,10 @@ ROAM_SCAN_INTERVAL  = 10.0    # s of roaming between periodic 360 re-scans
 
 
 def deviation_to_turn_ms(deviation_px, frame_half_w):
-    """Pixel deviation from center → motor turn duration (ms) + angle (deg)."""
+    """Pixel deviation from center → motor turn duration (ms) + angle (deg).
+    Duration uses the align-speed 90° time (turns happen at SPEED_ALIGN)."""
     angle = (abs(deviation_px) / frame_half_w) * HALF_FOV
-    turn_ms = (angle / 90.0) * TURN_90_MS
+    turn_ms = (angle / 90.0) * TURN_90_ALIGN_MS
     return max(MIN_TURN_MS, turn_ms), angle
 
 
@@ -171,10 +176,10 @@ class Aligner:
             if (now - self.approach_start) > APPROACH_TIMEOUT:
                 return self._go(self.IDLE, "STOP",
                                 f"⏱ approach timeout ({APPROACH_TIMEOUT}s) — STOP (front={center}cm)", "warn")
-            # keep driving forward (send FWD once, then nothing)
-            if self.last_sent != FWD:
-                self.last_sent = FWD
-                return FWD
+            fwd = _fwd(SPEED_APPROACH)
+            if self.last_sent != fwd:
+                self.last_sent = fwd
+                return fwd
             return None
 
         # ── ARRIVED: hold. Re-acquire only if fire lost ─────────────────────
@@ -202,61 +207,50 @@ class Aligner:
             if center > 0 and center <= STOP_DISTANCE_CM:
                 return self._go(self.ARRIVED, "STOP",
                                 f"✅ ARRIVED — front={center}cm STOP", "info")
-            # Centered, not there yet → start approaching
+            # Centered, not there yet → start approaching at slow align speed
             self.approach_start = now
-            return self._go(self.APPROACH, FWD,
-                            f"🎯 centered dev={deviation:+d}px → APPROACH (front={center}cm) FWD", "info")
+            return self._go(self.APPROACH, _fwd(SPEED_APPROACH),
+                            f"🎯 centered dev={deviation:+d}px → APPROACH (front={center}cm) @spd{SPEED_APPROACH}", "info")
 
-        # Off-center → start a proportional turn
+        # Off-center → start a proportional turn at slow align speed
         turn_ms, angle = deviation_to_turn_ms(deviation, frame_half_w)
-        cmd = TURN_L if deviation < 0 else TURN_R
+        cmd = _turn_l(SPEED_ALIGN) if deviation < 0 else _turn_r(SPEED_ALIGN)
         self.turn_end = now + turn_ms / 1000.0
         return self._go(self.TURNING, cmd,
                         f"↺ dev={deviation:+d}px → {angle:.1f}° {cmd} for {turn_ms:.0f}ms", "info")
 
-    # ── SCANNING: stepped 360 sweep, stop-and-look each step ────────────────
+    # ── SCANNING: one continuous 360° spin at scan speed ────────────────────
     def _start_scan(self, now):
-        """Begin a fresh stepped sweep (8 x 45 deg, look between each step)."""
-        self.scan_steps_left = SCAN_STEPS_FULL
-        self.scan_phase = "turn"
-        self.phase_end = now + SCAN_STEP_MS / 1000.0
-        return self._go(self.SCANNING, TURN_R,
-                        f"🔍 scan start — {SCAN_STEPS_FULL}×{SCAN_STEP_DEG}° sweep", "info")
+        """Spin a full 360° at scan speed. Fire is caught by preemption upstream
+        (aborts the spin instantly); a completed spin with no fire → roam."""
+        self.phase_end = now + SCAN_360_MS / 1000.0
+        return self._go(self.SCANNING, _turn_r(SPEED_SCAN),
+                        f"🔍 360° search spin @spd{SPEED_SCAN} ({SCAN_360_MS:.0f}ms)", "info")
 
     def _scan_tick(self, now):
-        """Advance the sweep. Fire (if any) is caught by preemption upstream."""
-        if self.scan_phase == "turn":
-            if now >= self.phase_end:
-                self.scan_phase = "look"           # stop and let YOLO look
-                self.phase_end = now + SCAN_SETTLE
-                self.last_sent = "STOP"
-                return "STOP"
-            return None                            # still turning this step
-        # look phase — standing still; no fire (else preempted)
-        if now < self.phase_end:
-            return None
-        self.scan_steps_left -= 1
-        if self.scan_steps_left <= 0:
-            return self._start_roam(now)           # full sweep, nothing → roam
-        self.scan_phase = "turn"
-        self.phase_end = now + SCAN_STEP_MS / 1000.0
-        self.last_sent = TURN_R
-        return TURN_R
+        """Keep spinning until 360° done, then roam. Fire = preemption upstream."""
+        if now >= self.phase_end:
+            return self._start_roam(now)
+        return None                                # still spinning, send nothing
 
     # ── ROAMING: wander forward, avoid obstacles, periodic re-scan ──────────
     def _start_roam(self, now):
         self.roam_phase = "drive"
         self.roam_clear_start = now   # anchor for the periodic 360 re-scan
-        return self._go(self.ROAMING, FWD, "🚶 free-roam — drive forward", "info")
+        return self._go(self.ROAMING, _fwd(SPEED_IDLE), "🚶 free-roam — drive forward", "info")
 
     def _roam_tick(self, now, center, left, right):
+        fwd      = _fwd(SPEED_IDLE)
+        turn90_s  = TURN_90_IDLE_MS  / 1000.0
+        turn180_s = TURN_180_IDLE_MS / 1000.0
+
         # finishing an avoidance turn? → reset scan timer (target-lock priority)
         if self.roam_phase == "turn":
             if now >= self.phase_end:
                 self.roam_phase = "drive"
                 self.roam_clear_start = now        # avoidance resets the 10s timer
-                self.last_sent = FWD
-                return FWD
+                self.last_sent = fwd
+                return fwd
             return None                            # still turning
 
         # driving forward — obstacle ahead? (0 = no echo = clear)
@@ -265,17 +259,17 @@ class Aligner:
             left_free  = (left == 0)  or (left > SIDE_CM)
             if right_free:
                 self.roam_phase = "turn"
-                self.phase_end = now + TURN_90_MS / 1000.0
-                return self._go(self.ROAMING, TURN_R,
+                self.phase_end = now + turn90_s
+                return self._go(self.ROAMING, _turn_r(SPEED_IDLE),
                                 f"⛔ front={center}cm → right free → 90° TURN_R", "warn")
             if left_free:
                 self.roam_phase = "turn"
-                self.phase_end = now + TURN_90_MS / 1000.0
-                return self._go(self.ROAMING, TURN_L,
+                self.phase_end = now + turn90_s
+                return self._go(self.ROAMING, _turn_l(SPEED_IDLE),
                                 f"⛔ front={center}cm → left free → 90° TURN_L", "warn")
             self.roam_phase = "turn"
-            self.phase_end = now + TURN_180_MS / 1000.0
-            return self._go(self.ROAMING, TURN_R,
+            self.phase_end = now + turn180_s
+            return self._go(self.ROAMING, _turn_r(SPEED_IDLE),
                             f"⛔ front={center}cm boxed in → 180° U-turn", "warn")
 
         # 10s of uninterrupted clear driving → 360 re-scan (obstacle/fire reset it)
@@ -284,7 +278,7 @@ class Aligner:
             return self._start_scan(now)
 
         # keep cruising
-        if self.last_sent != FWD:
-            self.last_sent = FWD
-            return FWD
+        if self.last_sent != fwd:
+            self.last_sent = fwd
+            return fwd
         return None
