@@ -328,11 +328,27 @@ def sensors():
 @socketio.on("command")
 def handle_command(data):
     cmd = str(data.get("cmd", "")).strip().upper()
-    allowed = {"FWD", "REV", "TURN_L", "TURN_R", "STOP", "PUMP_ON", "PUMP_OFF"}
-    if cmd in allowed:
+    motion_cmds = {"FWD", "REV", "TURN_L", "TURN_R"}
+    simple_cmds = {"STOP", "PUMP_ON", "PUMP_OFF"}
+
+    parts = cmd.split(",")
+    base = parts[0]
+
+    if base in simple_cmds:
         send_command(cmd)
+    elif base in motion_cmds:
+        if len(parts) == 2:
+            try:
+                spd = int(parts[1])
+                if 0 <= spd <= 255:
+                    send_command(cmd)
+                else:
+                    socketio.emit("log", {"msg": f"Speed out of range: {spd} (0-255)", "cls": "warn"})
+            except ValueError:
+                socketio.emit("log", {"msg": f"Invalid speed: {parts[1]}", "cls": "warn"})
+        else:
+            socketio.emit("log", {"msg": f"Motion command requires speed: {cmd}", "cls": "warn"})
     elif cmd.startswith("SERVO,"):
-        parts = cmd.split(",")
         if len(parts) == 2:
             try:
                 angle = int(parts[1])

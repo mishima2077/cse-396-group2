@@ -38,9 +38,6 @@ constexpr unsigned long SERIAL_BAUD = 115200UL;
 constexpr uint16_t SONAR_MAX_CM = 340;
 constexpr unsigned long SONAR_TRIG_US = 10UL;
 
-// ---- Motor Speed Levels (PWM 0..255) -------------------------------------------
-constexpr uint8_t MOTOR_SPEED = 255;
-
 // ---- Servo (hose direction) ----------------------------------------------------
 constexpr uint8_t PIN_SERVO = 3;
 

@@ -21,6 +21,9 @@ Mission flow:
 
 import time
 
+# ── Motor speed ───────────────────────────────────────────────────────────────
+MAX_SPEED = 255
+
 # ── Alignment tuning ──────────────────────────────────────────────────────────
 ALIGNMENT_THRESHOLD = 40      # px from center counted as "centered" (dead zone)
 REALIGN_THRESHOLD   = 80      # px drift during approach before re-centering
@@ -96,7 +99,7 @@ class Aligner:
             if now >= self.turn_end:
                 self.state = self.SETTLING
                 self.settle_end = now + SETTLE_TIME
-                self.last_sent = "STOP"
+                self.last_sent = f"STOP"
                 return "STOP"
             return None  # still turning, send nothing
 
@@ -120,9 +123,10 @@ class Aligner:
                 return self._go(self.IDLE, "STOP",
                                 f"⏱ approach timeout ({APPROACH_TIMEOUT}s) — STOP (front={center}cm)", "warn")
             # keep driving forward (send FWD once, then nothing)
-            if self.last_sent != "FWD":
-                self.last_sent = "FWD"
-                return "FWD"
+            fwd_cmd = f"FWD,{MAX_SPEED}"
+            if self.last_sent != fwd_cmd:
+                self.last_sent = fwd_cmd
+                return fwd_cmd
             return None
 
         # ── ARRIVED: hold. Re-acquire only if fire lost ─────────────────────
@@ -149,12 +153,14 @@ class Aligner:
                                 f"✅ ARRIVED — front={center}cm STOP", "info")
             # Centered, not there yet → start approaching
             self.approach_start = now
-            return self._go(self.APPROACH, "FWD",
+            fwd_cmd = f"FWD,{MAX_SPEED}"
+            return self._go(self.APPROACH, fwd_cmd,
                             f"🎯 centered dev={deviation:+d}px → APPROACH (front={center}cm) FWD", "info")
 
         # Off-center → start a proportional turn
         turn_ms, angle = deviation_to_turn_ms(deviation, frame_half_w)
-        cmd = "TURN_L" if deviation < 0 else "TURN_R"
+        turn_dir = "TURN_L" if deviation < 0 else "TURN_R"
+        cmd = f"{turn_dir},{MAX_SPEED}"
         self.turn_end = now + turn_ms / 1000.0
         return self._go(self.TURNING, cmd,
-                        f"↺ dev={deviation:+d}px → {angle:.1f}° {cmd} for {turn_ms:.0f}ms", "info")
+                        f"↺ dev={deviation:+d}px → {angle:.1f}° {turn_dir} for {turn_ms:.0f}ms", "info")

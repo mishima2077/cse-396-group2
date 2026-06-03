@@ -10,24 +10,33 @@ bool command_execute(const char* cmd) {
         return false;
     }
 
+    // Helper: extract speed from "CMD,SPEED" format
+    auto get_speed = [](const char* s) -> uint8_t {
+        const char* comma = strchr(s, ',');
+        if (comma) {
+            return (uint8_t)constrain(atoi(comma + 1), 0, 255);
+        }
+        return 0;
+    };
+
     // Compare commands (case-insensitive)
     if (strncmp(cmd, "FWD", 3) == 0 || strcmp(cmd, "FORWARD") == 0) {
-        forward();
+        forward(get_speed(cmd));
         return true;
     }
 
     if (strncmp(cmd, "REV", 3) == 0 || strcmp(cmd, "REVERSE") == 0) {
-        reverse();
+        reverse(get_speed(cmd));
         return true;
     }
 
     if (strncmp(cmd, "TURN_L", 6) == 0 || strcmp(cmd, "LEFT") == 0) {
-        turn_left();
+        turn_left(get_speed(cmd));
         return true;
     }
 
     if (strncmp(cmd, "TURN_R", 6) == 0 || strcmp(cmd, "RIGHT") == 0) {
-        turn_right();
+        turn_right(get_speed(cmd));
         return true;
     }
 

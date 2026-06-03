@@ -187,6 +187,18 @@
       </div>
     </div>
 
+    <!-- Speed Control -->
+    <div class="card">
+      <div class="card-title">Motor Speed</div>
+      <div style="padding:8px;">
+        <input id="speed-slider" type="range" min="0" max="255" value="255"
+          style="width:100%;cursor:pointer;">
+        <div style="text-align:center;margin-top:6px;font-size:0.85rem;color:#8b949e;">
+          <span id="speed-value">255</span> / 255
+        </div>
+      </div>
+    </div>
+
     <!-- Controls -->
     <div class="card">
       <div class="card-title">Motor Controls</div>
@@ -284,9 +296,17 @@ socket.on('fire_yolo', (data) => {
 
 socket.on('log', (data) => addLog(data.msg, data.cls || ''));
 
+// Speed slider update
+document.getElementById('speed-slider').addEventListener('input', (e) => {
+  document.getElementById('speed-value').textContent = e.target.value;
+});
+
 function cmd(c) {
-  socket.emit('command', {cmd: c});
-  addLog('→ ' + c, 'cmd');
+  const motionCmds = ["FWD", "REV", "TURN_L", "TURN_R"];
+  const speed = parseInt(document.getElementById("speed-slider").value);
+  const payload = motionCmds.includes(c) ? `${c},${speed}` : c;
+  socket.emit('command', {cmd: payload});
+  addLog('→ ' + payload, 'cmd');
 }
 
 // ── Distance display ──────────────────────────────────────────────────────────

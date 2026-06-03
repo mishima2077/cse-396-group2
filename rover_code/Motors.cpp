@@ -23,44 +23,48 @@ void motors_init(void) {
     stop();
 }
 
-void left_forward(void) {
-    analogWrite(PIN_LEFT_RPWM, MOTOR_SPEED);
+void left_forward(uint8_t speed) {
+    uint8_t s = constrain(speed, 0, 255);
+    analogWrite(PIN_LEFT_RPWM, s);
     analogWrite(PIN_LEFT_LPWM, 0);
 }
 
-void left_reverse(void) {
+void left_reverse(uint8_t speed) {
+    uint8_t s = constrain(speed, 0, 255);
     analogWrite(PIN_LEFT_RPWM, 0);
-    analogWrite(PIN_LEFT_LPWM, MOTOR_SPEED);
+    analogWrite(PIN_LEFT_LPWM, s);
 }
 
-void right_forward(void) {
+void right_forward(uint8_t speed) {
+    uint8_t s = constrain(speed, 0, 255);
     analogWrite(PIN_RIGHT_RPWM, 0);
-    analogWrite(PIN_RIGHT_LPWM, MOTOR_SPEED);
+    analogWrite(PIN_RIGHT_LPWM, s);
 }
 
-void right_reverse(void) {
-    analogWrite(PIN_RIGHT_RPWM, MOTOR_SPEED);
+void right_reverse(uint8_t speed) {
+    uint8_t s = constrain(speed, 0, 255);
+    analogWrite(PIN_RIGHT_RPWM, s);
     analogWrite(PIN_RIGHT_LPWM, 0);
 }
 
-void forward(void) {
-    left_forward();
-    right_forward();
+void forward(uint8_t speed) {
+    left_forward(speed);
+    right_forward(speed);
 }
 
-void reverse(void) {
-    left_reverse();
-    right_reverse();
+void reverse(uint8_t speed) {
+    left_reverse(speed);
+    right_reverse(speed);
 }
 
-void turn_left(void) {
-    left_reverse();
-    right_forward();
+void turn_left(uint8_t speed) {
+    left_reverse(speed);
+    right_forward(speed);
 }
 
-void turn_right(void) {
-    left_forward();
-    right_reverse();
+void turn_right(uint8_t speed) {
+    left_forward(speed);
+    right_reverse(speed);
 }
 
 void stop(void) {
