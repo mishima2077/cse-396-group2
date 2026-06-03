@@ -31,8 +31,12 @@ ARDUINO_BAUD = 115200
 # Fire tracking thresholds
 MAX_TRACK_DISTANCE = 90      # pixels for centroid matching
 MAX_TRACK_AGE = 1.0          # seconds before track dies
-ALIGNMENT_THRESHOLD = 50     # pixels from center before turning
-FORWARD_MOVEMENT_FRAMES = 30 # frames to move forward before re-align
+ALIGNMENT_THRESHOLD = 80     # pixels from center before turning (wider = less oscillation)
+
+# Pulse turning: turn for short burst then stop, wait for camera feedback
+# Increase PULSE_MS if rover barely moves per step
+# Decrease PULSE_MS if rover overshoots every time
+PULSE_MS = 0.15              # seconds per turn pulse
 
 
 def log(msg: str):
@@ -156,7 +160,16 @@ def main():
     tracks = {}
     next_id = 1
     frame_idx = 0
-    forward_counter = 0
+    last_cmd = None
+    last_cmd_time = 0.0
+    CMD_RATE_LIMIT = 0.20        # seconds between same command repeats
+    last_pulse_time = 0.0        # time of last turn pulse
+    PULSE_COOLDOWN = PULSE_MS + 0.10  # wait for camera to catch up after pulse
+
+    # Allow camera sensor to initialize — macOS needs several frames before reads succeed
+    for _ in range(5):
+        cap.read()
+        time.sleep(0.1)
 
     show_gui = not args.no_gui
     if show_gui:
@@ -257,46 +270,49 @@ def main():
                 del tracks[tid]
 
             # ---- Motor Control Logic ----
+            def rate_limited_cmd(cmd):
+                nonlocal last_cmd, last_cmd_time
+                if cmd == last_cmd and (now - last_cmd_time) < CMD_RATE_LIMIT:
+                    return
+                send_command(ser, cmd)
+                last_cmd = cmd
+                last_cmd_time = now
+
             if tracks:
-                # Get strongest (most confident) fire track
                 main_track = max(tracks.values(), key=lambda t: t["conf"])
                 fire_cx = main_track["cx"]
-
-                # Calculate deviation from frame center
                 deviation = fire_cx - frame_cx
 
                 log(f"[ALIGN] Fire at x={fire_cx}, frame center x={frame_cx}, deviation={deviation}")
 
-                # Alignment decisions
                 if abs(deviation) > ALIGNMENT_THRESHOLD:
-                    if deviation < 0:
-                        # Fire on left side - turn left
-                        send_command(ser, "TURN_L")
-                        forward_counter = 0
-                    else:
-                        # Fire on right side - turn right
-                        send_command(ser, "TURN_R")
-                        forward_counter = 0
+                    # Pulse: only turn if cooldown elapsed (rover stopped + camera settled)
+                    if (now - last_pulse_time) >= PULSE_COOLDOWN:
+                        turn_cmd = "TURN_L" if deviation < 0 else "TURN_R"
+                        send_command(ser, turn_cmd)
+                        last_cmd = turn_cmd
+                        last_cmd_time = now
+                        time.sleep(PULSE_MS)        # turn for fixed burst
+                        send_command(ser, "STOP")
+                        last_cmd = "STOP"
+                        last_pulse_time = now       # start cooldown
                 else:
-                    # Fire is roughly centered - move forward
-                    if forward_counter == 0:
-                        send_command(ser, "FWD")
-                    forward_counter += 1
+                    # Fire centered — hold position
+                    rate_limited_cmd("STOP")
 
-                    # Re-align every N frames
-                    if forward_counter > FORWARD_MOVEMENT_FRAMES:
-                        forward_counter = 0
-
-                # Draw target box
                 cv2.rectangle(frame, (main_track["x1"], main_track["y1"]),
                             (main_track["x2"], main_track["y2"]), (0, 255, 0), 3)
                 cv2.putText(frame, "TARGET",
                            (main_track["x1"], main_track["y1"] - 15),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             else:
-                # No fire detected - search
-                if frame_idx % 60 == 0:  # Every 2 seconds (assuming ~30fps)
+                # No fire — stop then search-turn every 2 sec
+                if last_cmd not in ("STOP", "TURN_L") or last_cmd == "FWD":
+                    rate_limited_cmd("STOP")
+                if frame_idx % 60 == 0:
                     send_command(ser, "TURN_L")
+                    last_cmd = "TURN_L"
+                    last_cmd_time = now
 
             # Draw frame center crosshair
             draw_center_crosshair(frame, frame_cx, frame_cy)
