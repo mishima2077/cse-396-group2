@@ -10,10 +10,11 @@ and keeps streaming video. Internally a small state machine driven by
 wall-clock time + sensor readings, so no time.sleep ever stalls the caller.
 
 Mission flow:
-  1. No fire        → hold still (STOP).
-  2. Fire off-center→ rotate to center it (TURN_L/R).
-  3. Fire centered  → drive forward toward it (FWD).
-  4. Front sensor ≤ STOP_DISTANCE_CM → stop (ARRIVED).
+  1. No fire         → hold still (STOP).
+  2. Fire off-center → rotate to center it (TURN_L/R).
+  3. Fire centered   → drive forward toward it (FWD).
+  4. Front sensor ≤ STOP_DISTANCE_CM → ARRIVED → EXTINGUISHING.
+  5. EXTINGUISHING   → oscillating pump sweep (slow then fast) → IDLE.
   During approach, if the fire drifts off-center it stops and re-centers,
   then resumes. When fire is lost it scans 360°, then free-roams.
 
@@ -58,6 +59,63 @@ OBSTACLE_CM         = _A.obstacle_cm
 SIDE_CM             = _A.side_cm
 ROAM_SCAN_INTERVAL  = _A.roam_scan_interval
 
+# ── Extinguishing sequence ────────────────────────────────────────────────────
+# Turn durations are derived from the TURN_90_ALIGN_MS calibration at SPEED_ALIGN.
+# Linear speed→angle scaling assumed — verify on the rig and adjust ms values.
+_EXT_SPD_SLOW    = 30    # PWM for slow sweep
+_EXT_SPD_FAST    = 70    # PWM for fast sweep
+_EXT_SETTLE_SLOW = 100   # ms pause between turns (slow phase)
+_EXT_SETTLE_FAST = 80    # ms pause between turns (fast phase)
+_EXT_PAUSE_MS    = 1500  # ms gap between phases (pump off → pump on)
+
+
+def _deg_ms(degrees, speed):
+    """Motor-on time (ms) to rotate ``degrees`` at ``speed`` PWM.
+
+    Derived from TURN_90_ALIGN_MS measured at SPEED_ALIGN. Linear scaling
+    assumed: slower speed → proportionally longer time for the same angle.
+    """
+    return int((TURN_90_ALIGN_MS / 90) * (SPEED_ALIGN / speed) * degrees)
+
+
+# Each step: (action, duration_ms, speed)
+#   action      ∈ {TURN_R, TURN_L, STOP, PUMP_ON, PUMP_OFF, WAIT}
+#   duration_ms = 0 → command is sent instantly; step advances on the next frame
+#   speed       = None for non-motion actions
+_EXT_SEQUENCE = [
+    # ── Phase 1: slow oscillating sweep with pump on ──────────────────────────
+    ("PUMP_ON",  0,                             None),
+    ("TURN_R",   _deg_ms(5,  _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +5°  right
+    ("STOP",     _EXT_SETTLE_SLOW,              None),
+    ("TURN_L",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -10° left
+    ("STOP",     _EXT_SETTLE_SLOW,              None),
+    ("TURN_R",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +10° right
+    ("STOP",     _EXT_SETTLE_SLOW,              None),
+    ("TURN_L",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -10° left
+    ("STOP",     _EXT_SETTLE_SLOW,              None),
+    ("TURN_R",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +10° right
+    ("STOP",     _EXT_SETTLE_SLOW,              None),
+    ("TURN_L",   _deg_ms(5,  _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -5°  → center
+    ("STOP",     0,                             None),
+    ("PUMP_OFF", 0,                             None),
+    ("WAIT",     _EXT_PAUSE_MS,                 None),
+    # ── Phase 2: fast oscillating sweep with pump on ──────────────────────────
+    ("PUMP_ON",  0,                             None),
+    ("TURN_R",   _deg_ms(5,  _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +5°  right
+    ("STOP",     _EXT_SETTLE_FAST,              None),
+    ("TURN_L",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -10° left
+    ("STOP",     _EXT_SETTLE_FAST,              None),
+    ("TURN_R",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +10° right
+    ("STOP",     _EXT_SETTLE_FAST,              None),
+    ("TURN_L",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -10° left
+    ("STOP",     _EXT_SETTLE_FAST,              None),
+    ("TURN_R",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +10° right
+    ("STOP",     _EXT_SETTLE_FAST,              None),
+    ("TURN_L",   _deg_ms(5,  _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -5°  → center
+    ("STOP",     0,                             None),
+    ("PUMP_OFF", 0,                             None),
+]
+
 
 def deviation_to_turn_ms(deviation_px, frame_half_w):
     """Pixel deviation from center → motor turn duration (ms) + angle (deg).
@@ -68,35 +126,39 @@ def deviation_to_turn_ms(deviation_px, frame_half_w):
 
 
 class Aligner:
-    """Stateful, non-blocking align + approach decider.
+    """Stateful, non-blocking align + approach + extinguish decider.
 
     Call update() once per video frame with the fire deviation and the latest
     distance sensors. Returns the motor command to send (str) or None.
     """
 
-    IDLE      = "IDLE"
-    TURNING   = "TURNING"
-    SETTLING  = "SETTLING"
-    APPROACH  = "APPROACH"
-    ARRIVED   = "ARRIVED"
-    SCANNING  = "SCANNING"     # 360 sweep looking for fire
-    ROAMING   = "ROAMING"      # free-roam wander with obstacle avoidance
+    IDLE          = "IDLE"
+    TURNING       = "TURNING"
+    SETTLING      = "SETTLING"
+    APPROACH      = "APPROACH"
+    ARRIVED       = "ARRIVED"        # log-only label; immediately enters EXTINGUISHING
+    EXTINGUISHING = "EXTINGUISHING"
+    SCANNING      = "SCANNING"       # 360° sweep looking for fire
+    ROAMING       = "ROAMING"        # free-roam wander with obstacle avoidance
 
     def __init__(self, logger=None):
         # logger(msg: str, cls: str) — optional, mirrors decisions to dashboard
         self._log = logger or (lambda msg, cls="info": None)
         self.state = self.IDLE
-        self.turn_end = 0.0        # wall-clock time the current turn should stop
-        self.settle_end = 0.0      # wall-clock time the settle window ends
-        self.approach_start = 0.0  # wall-clock time the current approach began
-        self.last_sent = None      # last command returned (avoids spam)
+        self.turn_end = 0.0          # wall-clock time the current turn should stop
+        self.settle_end = 0.0        # wall-clock time the settle window ends
+        self.approach_start = 0.0   # wall-clock time the current approach began
+        self.last_sent = None        # last command returned (avoids spam)
         # search/roam phase machinery (all wall-clock, non-blocking)
-        self.scan_steps_left = 0   # scan steps remaining in the current sweep
-        self.scan_phase = "turn"   # "turn" | "look" within a scan step
-        self.phase_end = 0.0       # wall-clock end of the current scan/roam phase
-        self.roam_phase = "drive"  # "drive" | "turn" within roaming
+        self.scan_steps_left = 0
+        self.scan_phase = "turn"     # "turn" | "look" within a scan step
+        self.phase_end = 0.0         # wall-clock end of the current scan/roam phase
+        self.roam_phase = "drive"    # "drive" | "turn" within roaming
         self.roam_clear_start = 0.0  # when the current clear forward run began
         self.fire_lost_since = None  # wall-clock when fire was last lost (grace timer)
+        # extinguish sequence state
+        self._ext_step = 0
+        self._ext_step_start = 0.0
 
     def reset(self):
         """Reset FSM to IDLE — call when returning to auto mode after manual control."""
@@ -111,6 +173,8 @@ class Aligner:
         self.roam_phase = "drive"
         self.roam_clear_start = 0.0
         self.fire_lost_since = None
+        self._ext_step = 0
+        self._ext_step_start = 0.0
 
     def _go(self, state, cmd, msg, cls="info"):
         """Transition to a state, log it, and return the command to send."""
@@ -140,6 +204,10 @@ class Aligner:
         right  = sensors.get("right", 0) or 0
         has_fire = deviation is not None
 
+        # ── EXTINGUISHING runs to completion — nothing interrupts it ─────────
+        if self.state == self.EXTINGUISHING:
+            return self._extinguish_tick(now)
+
         # ── FIRE = HIGHEST PRIORITY — everything else is secondary ───────────
         if has_fire:
             self.fire_lost_since = None                 # reset grace timer
@@ -157,7 +225,7 @@ class Aligner:
         if self.state == self.ROAMING:
             return self._roam_tick(now, center, left, right)
 
-        # ── Finish an in-progress turn (non-blocking) ───────────────────────
+        # ── Finish an in-progress turn (non-blocking) ────────────────────────
         if self.state == self.TURNING:
             if now >= self.turn_end:
                 self.state = self.SETTLING
@@ -171,14 +239,14 @@ class Aligner:
                 return None  # let camera/YOLO catch up before re-deciding
             self.state = self.IDLE  # settled — fall through and reassess now
 
-        # ── APPROACH: drive forward, watch fire + front sensor ──────────────
+        # ── APPROACH: drive forward, watch fire + front sensor ───────────────
         if self.state == self.APPROACH:
             if not has_fire:
                 return self._go(self.IDLE, "STOP",
                                 "✋ fire lost during approach — STOP", "warn")
             if center > 0 and center <= STOP_DISTANCE_CM:
-                return self._go(self.ARRIVED, "STOP",
-                                f"✅ ARRIVED — front={center}cm (≤{STOP_DISTANCE_CM}) STOP", "info")
+                self._log(f"✅ ARRIVED — front={center}cm → starting extinguish", "info")
+                return self._start_extinguish(now)
             if abs(deviation) > REALIGN_THRESHOLD:
                 return self._go(self.IDLE, "STOP",
                                 f"↩ drifted dev={deviation:+d}px — STOP & re-center", "warn")
@@ -191,16 +259,7 @@ class Aligner:
                 return fwd
             return None
 
-        # ── ARRIVED: hold. Re-acquire only if fire lost ─────────────────────
-        if self.state == self.ARRIVED:
-            if not has_fire:
-                return self._go(self.IDLE, "STOP", "fire lost — back to idle", "warn")
-            if self.last_sent != "STOP":
-                self.last_sent = "STOP"
-                return "STOP"
-            return None
-
-        # ── IDLE: decide based on current target ────────────────────────────
+        # ── IDLE: decide based on current target ─────────────────────────────
         if not has_fire:
             # brief fire loss (flicker/frame-skip) → hold still, don't search yet
             if (now - self.fire_lost_since) < FIRE_LOST_GRACE:
@@ -214,8 +273,8 @@ class Aligner:
         if abs(deviation) <= ALIGNMENT_THRESHOLD:
             # Centered — already at the fire?
             if center > 0 and center <= STOP_DISTANCE_CM:
-                return self._go(self.ARRIVED, "STOP",
-                                f"✅ ARRIVED — front={center}cm STOP", "info")
+                self._log(f"✅ ARRIVED — front={center}cm → starting extinguish", "info")
+                return self._start_extinguish(now)
             # Centered, not there yet → start approaching
             self.approach_start = now
             return self._go(self.APPROACH, _fwd(SPEED_APPROACH),
@@ -228,7 +287,53 @@ class Aligner:
         return self._go(self.TURNING, cmd,
                         f"↺ dev={deviation:+d}px → {angle:.1f}° {cmd} for {turn_ms:.0f}ms", "info")
 
-    # ── SCANNING: one continuous 360° spin at scan speed ────────────────────
+    # ── EXTINGUISHING: timed oscillating pump sweep ───────────────────────────
+    def _start_extinguish(self, now):
+        """Enter EXTINGUISHING and execute the first step immediately."""
+        self.state = self.EXTINGUISHING
+        self._ext_step = 0
+        self._ext_step_start = now
+        self._log("🚿 extinguish sequence started — slow sweep, pump ON", "info")
+        cmd = self._ext_cmd(_EXT_SEQUENCE[0])
+        self.last_sent = cmd
+        return cmd
+
+    def _ext_cmd(self, step):
+        """Build the Arduino command for one extinguish step."""
+        action, _, speed = step
+        if action == "TURN_R":
+            return _turn_r(speed)
+        if action == "TURN_L":
+            return _turn_l(speed)
+        if action in ("STOP", "WAIT"):
+            return STOP
+        return action  # "PUMP_ON" or "PUMP_OFF" passed through verbatim
+
+    def _extinguish_tick(self, now):
+        """Advance the extinguish sequence one tick. Called every frame."""
+        action, duration_ms, _ = _EXT_SEQUENCE[self._ext_step]
+        if (now - self._ext_step_start) < duration_ms / 1000.0:
+            return None  # current step still running
+
+        # Advance to the next step
+        self._ext_step += 1
+        if self._ext_step >= len(_EXT_SEQUENCE):
+            return self._go(self.IDLE, STOP, "✅ Extinguish complete → IDLE", "info")
+
+        self._ext_step_start = now
+        step = _EXT_SEQUENCE[self._ext_step]
+        action, _, _ = step
+
+        if action == "WAIT":
+            self._log(f"🚿 slow sweep done — pausing {_EXT_PAUSE_MS}ms", "info")
+        elif action == "PUMP_ON" and self._ext_step > 1:
+            self._log("🚿 fast sweep starting — pump ON", "info")
+
+        cmd = self._ext_cmd(step)
+        self.last_sent = cmd
+        return cmd
+
+    # ── SCANNING: one continuous 360° spin at scan speed ─────────────────────
     def _start_scan(self, now):
         """Spin a full 360° at scan speed. Fire is caught by preemption upstream
         (aborts the spin instantly); a completed spin with no fire → roam."""
@@ -242,18 +347,18 @@ class Aligner:
             return self._start_roam(now)
         return None                                # still spinning, send nothing
 
-    # ── ROAMING: wander forward, avoid obstacles, periodic re-scan ──────────
+    # ── ROAMING: wander forward, avoid obstacles, periodic re-scan ───────────
     def _start_roam(self, now):
         self.roam_phase = "drive"
         self.roam_clear_start = now   # anchor for the periodic 360 re-scan
         return self._go(self.ROAMING, _fwd(SPEED_IDLE), "🚶 free-roam — drive forward", "info")
 
     def _roam_tick(self, now, center, left, right):
-        fwd      = _fwd(SPEED_IDLE)
+        fwd       = _fwd(SPEED_IDLE)
         turn90_s  = TURN_90_IDLE_MS  / 1000.0
         turn180_s = TURN_180_IDLE_MS / 1000.0
 
-        # finishing an avoidance turn? → reset scan timer (target-lock priority)
+        # finishing an avoidance turn? → reset scan timer
         if self.roam_phase == "turn":
             if now >= self.phase_end:
                 self.roam_phase = "drive"
@@ -281,7 +386,7 @@ class Aligner:
             return self._go(self.ROAMING, _turn_r(SPEED_IDLE),
                             f"⛔ front={center}cm boxed in → 180° U-turn", "warn")
 
-        # 10s of uninterrupted clear driving → 360 re-scan (obstacle/fire reset it)
+        # 10s of uninterrupted clear driving → 360 re-scan
         if (now - self.roam_clear_start) >= ROAM_SCAN_INTERVAL:
             self._log(f"⏱ {ROAM_SCAN_INTERVAL:.0f}s clear — 360° re-scan", "info")
             return self._start_scan(now)
