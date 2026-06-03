@@ -85,33 +85,33 @@ def _deg_ms(degrees, speed):
 _EXT_SEQUENCE = [
     # ── Phase 1: slow oscillating sweep with pump on ──────────────────────────
     ("PUMP_ON",  0,                             None),
-    ("TURN_R",   _deg_ms(5,  _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +5°  right
+    ("TURN_R",   _deg_ms(10,  _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +5°  right
     ("STOP",     _EXT_SETTLE_SLOW,              None),
-    ("TURN_L",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -10° left
+    ("TURN_L",   _deg_ms(20, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -10° left
     ("STOP",     _EXT_SETTLE_SLOW,              None),
-    ("TURN_R",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +10° right
+    ("TURN_R",   _deg_ms(20, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +10° right
     ("STOP",     _EXT_SETTLE_SLOW,              None),
-    ("TURN_L",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -10° left
+    ("TURN_L",   _deg_ms(20, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -10° left
     ("STOP",     _EXT_SETTLE_SLOW,              None),
-    ("TURN_R",   _deg_ms(10, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +10° right
+    ("TURN_R",   _deg_ms(20, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +10° right
     ("STOP",     _EXT_SETTLE_SLOW,              None),
-    ("TURN_L",   _deg_ms(5,  _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -5°  → center
+    ("TURN_L",   _deg_ms(10,  _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -5°  → center
     ("STOP",     0,                             None),
     ("PUMP_OFF", 0,                             None),
     ("WAIT",     _EXT_PAUSE_MS,                 None),
     # ── Phase 2: fast oscillating sweep with pump on ──────────────────────────
     ("PUMP_ON",  0,                             None),
-    ("TURN_R",   _deg_ms(5,  _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +5°  right
+    ("TURN_R",   _deg_ms(10,  _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +5°  right
     ("STOP",     _EXT_SETTLE_FAST,              None),
-    ("TURN_L",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -10° left
+    ("TURN_L",   _deg_ms(20, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -10° left
     ("STOP",     _EXT_SETTLE_FAST,              None),
-    ("TURN_R",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +10° right
+    ("TURN_R",   _deg_ms(20, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +10° right
     ("STOP",     _EXT_SETTLE_FAST,              None),
-    ("TURN_L",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -10° left
+    ("TURN_L",   _deg_ms(20, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -10° left
     ("STOP",     _EXT_SETTLE_FAST,              None),
-    ("TURN_R",   _deg_ms(10, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +10° right
+    ("TURN_R",   _deg_ms(20, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +10° right
     ("STOP",     _EXT_SETTLE_FAST,              None),
-    ("TURN_L",   _deg_ms(5,  _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -5°  → center
+    ("TURN_L",   _deg_ms(10,  _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -5°  → center
     ("STOP",     0,                             None),
     ("PUMP_OFF", 0,                             None),
 ]
