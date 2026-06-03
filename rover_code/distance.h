@@ -2,11 +2,12 @@
 #define DISTANCE_H
 
 #include <stdint.h>
+#include "Config.h"
 
-#define DIST_TRIG_PIN  9
-#define DIST_ECHO_PIN  10
-
-void     distance_init(void);
-uint16_t distance_read_cm(void);
+void distance_init(void);
+void distance_update(void);
+uint16_t distance_get_left(void);
+uint16_t distance_get_center(void);
+uint16_t distance_get_right(void);
 
 #endif

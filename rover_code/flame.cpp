@@ -1,24 +1,23 @@
 #include <Arduino.h>
 #include "flame.h"
 
-static const uint8_t do_pins[FLAME_SENSOR_COUNT] = FLAME_DO_PINS;
-static const uint8_t ao_pins[FLAME_SENSOR_COUNT] = FLAME_AO_PINS;
+static uint16_t last_analog = 0;
+static uint8_t last_digital = 1;
 
 void flame_init(void) {
-    for (uint8_t i = 0; i < FLAME_SENSOR_COUNT; i++) {
-        pinMode(do_pins[i], INPUT);
-        pinMode(ao_pins[i], INPUT);
-    }
+    pinMode(PIN_FLAME_DO, INPUT);
+    pinMode(PIN_FLAME_AO, INPUT);
 }
 
-void flame_read(uint16_t *values) {
-    for (uint8_t i = 0; i < FLAME_SENSOR_COUNT; i++) {
-        values[i] = (uint16_t)analogRead(ao_pins[i]);
-    }
+void flame_update(void) {
+    last_analog = (uint16_t)analogRead(PIN_FLAME_AO);
+    last_digital = (digitalRead(PIN_FLAME_DO) == LOW) ? 0 : 1;
 }
 
-void flame_detected(bool *results) {
-    for (uint8_t i = 0; i < FLAME_SENSOR_COUNT; i++) {
-        results[i] = digitalRead(do_pins[i]) == LOW;
-    }
+uint16_t flame_get_analog(void) {
+    return last_analog;
+}
+
+uint8_t flame_get_digital(void) {
+    return last_digital;
 }
