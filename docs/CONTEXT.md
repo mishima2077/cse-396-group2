@@ -52,8 +52,18 @@ rover_code/          ← Arduino firmware (C++)
   water_pump.{h,cpp} pump on/off
 
 pi_code/             ← Raspberry Pi Python
-  dashboard_server.py  Flask-SocketIO server + video + brain
-  align_logic.py       autonomous FSM (pure logic, no I/O)
+  run.py               launcher → rover.app.main()
+  rover/               application package (one responsibility per module)
+    config.py          all tunable constants (the one place to fine-tune)
+    protocol.py        Arduino wire format: command builders + sensor parsing
+    state.py           thread-safe SharedState (sensors / frame / fire)
+    serial_link.py     Arduino serial I/O (connect, send, read loop)
+    camera.py          camera discovery + capture wrapper
+    vision.py          YOLO FireDetector + frame annotation
+    autonomy.py        the alignment/approach FSM (pure logic, no I/O)
+    controller.py      manual/auto mode policy — decides who drives
+    web.py             Flask + SocketIO routes/handlers + MJPEG
+    app.py             orchestration / entry point
   templates/
     index.html         browser dashboard (MJPEG + WebSocket)
   models/
@@ -119,30 +129,49 @@ Round-robin scheduler fires one sonar every 20 ms (60 ms full cycle). `pulseIn` 
 
 ## Raspberry Pi Software (`pi_code/`)
 
-### `dashboard_server.py` — Body / Server
+> **Module map.** The Pi software is split into a `rover/` package, one
+> responsibility per file (see Repository Layout). `app.py` wires them together;
+> `config.py` holds every tunable; `protocol.py` is the single source of truth
+> for the Arduino wire format. The descriptions below cover the two most
+> involved pieces — the server orchestration and the FSM.
+
+### `rover/app.py` + `rover/web.py` — Body / Server
 
 Owns all I/O:
 - Opens camera (requests max resolution; driver clamps to sensor max)
 - Auto-detects Arduino serial port: tries `/dev/ttyUSB0`, `/dev/ttyACM0`, `/dev/ttyUSB1`, `/dev/ttyACM1`
-- Runs three background threads: serial reader, video+YOLO, Flask-SocketIO
-- Forwards every command from `align_logic` and the browser to Arduino via `send_command()`
+- Runs two background threads (serial reader, video+YOLO) plus the Flask-SocketIO server
+- Routes commands through `RoverController`: in AUTO the FSM drives; in MANUAL the
+  browser drives. `controller.send()` is the choke-point that writes to the
+  Arduino (`serial_link.send`) and mirrors every command to the dashboard log.
 
-Key constants:
+Key constants (all in `rover/config.py` → `VisionCfg` / `ServerCfg`):
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `YOLO_CONF` | 0.60 | Minimum detection confidence |
-| `YOLO_IMGSZ` | 256 | Inference image size (Pi-safe) |
-| `YOLO_EVERY_N` | 5 | Run YOLO every 5th frame |
-| `MJPEG_QUALITY` | 55 | JPEG encode quality |
-| `SENSOR_EMIT_HZ` | 10 | Max WebSocket sensor pushes/sec |
-| `FIRE_LABELS` | `{"fire"}` | Only this label triggers alignment |
+| `vision.conf` | 0.60 | Minimum detection confidence |
+| `vision.imgsz` | 256 | Inference image size (Pi-safe) |
+| `vision.every_n` | 5 | Run YOLO every 5th frame |
+| `vision.mjpeg_quality` | 55 | JPEG encode quality |
+| `server.sensor_emit_hz` | 10 | Max WebSocket sensor pushes/sec |
+| `vision.labels` | `{"fire"}` | Only this label triggers alignment |
+
+### `rover/controller.py` — Mode policy
+
+`RoverController` owns the serial link, the `Aligner` FSM, and the manual/auto
+flag. It is the only place that decides who drives:
+- **AUTO** — `on_frame()` runs the FSM each video frame and sends its command;
+  dashboard motion commands are ignored.
+- **MANUAL** — the FSM is paused; only `manual_command()` (from the browser)
+  moves the rover.
+- `set_mode()` always sends `STOP` on a switch, and resets the FSM when
+  returning to AUTO so it re-plans from a clean state.
 
 YOLO result is cached between inference frames — bounding boxes are drawn on every frame even without re-running inference.
 
-### `align_logic.py` — Brain / FSM
+### `rover/autonomy.py` — Brain / FSM
 
-Pure decision logic with zero I/O. Called once per video frame via `aligner.update(main_target, frame_w, sensors, now)`. Returns a command string or `None`.
+Pure decision logic with zero I/O. Called once per video frame via `aligner.update(deviation, frame_w, sensors, now)` (where `deviation` is the fire's signed px offset from center, or `None` if no fire). Returns a command string or `None`.
 
 #### Speed Tiers
 
@@ -252,24 +281,24 @@ Read-only sensor readout. Parses `D,...` lines from Arduino and prints formatted
 ## Deployment
 
 ```bash
-# Copy to Pi
-scp pi_code/align_logic.py pi_code/dashboard_server.py \
+# Copy to Pi (whole package + launcher + templates)
+scp -r pi_code/run.py pi_code/rover pi_code/templates pi_code/models \
     mertergorun@172.20.10.2:~/fire_dashboard/
 
 # Install Python dependencies on Pi
 pip install ultralytics opencv-python flask flask-socketio pyserial huggingface_hub
 
-# Run
-python3 ~/fire_dashboard/dashboard_server.py
+# Run (from the dir containing run.py + rover/)
+cd ~/fire_dashboard && python3 run.py
 
 # Run without YOLO (sensor + manual control only)
-python3 ~/fire_dashboard/dashboard_server.py --no-yolo
+python3 run.py --no-yolo
 
 # Run without autonomous alignment (observe only)
-python3 ~/fire_dashboard/dashboard_server.py --no-align
+python3 run.py --no-align
 
 # Force specific serial port
-python3 ~/fire_dashboard/dashboard_server.py --serial /dev/ttyUSB0
+python3 run.py --serial /dev/ttyUSB0
 ```
 
 ---

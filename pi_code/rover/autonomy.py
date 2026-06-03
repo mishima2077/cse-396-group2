@@ -1,66 +1,62 @@
 #!/usr/bin/env python3
-"""
-Rover alignment + approach "brain" — pure decision logic, no I/O.
+"""Rover alignment + approach "brain" — pure decision logic, no I/O.
 
-No camera, no serial here. Input: where the fire is + distance sensors.
-Output: which motor command to send (TURN_L / TURN_R / FWD / STOP) — or None.
+No camera, no serial here. Input: the fire's horizontal deviation (signed px
+from frame center, or None if no fire) + distance sensors. Output: which motor
+command to send (TURN_L / TURN_R / FWD / STOP) — or None.
 
 All motion is NON-BLOCKING: the caller sends the returned command each frame
 and keeps streaming video. Internally a small state machine driven by
-wall-clock time + sensor readings, so no time.sleep ever stalls the video
-thread.
+wall-clock time + sensor readings, so no time.sleep ever stalls the caller.
 
 Mission flow:
-  1. No fire        → hold still (STOP).               [Phase 1]
-  2. Fire off-center→ rotate to center it (TURN_L/R).  [Phase 1]
-  3. Fire centered  → drive forward toward it (FWD).   [Phase 2]
-  4. Front sensor ≤ STOP_DISTANCE_CM → stop (ARRIVED). [Phase 2]
+  1. No fire        → hold still (STOP).
+  2. Fire off-center→ rotate to center it (TURN_L/R).
+  3. Fire centered  → drive forward toward it (FWD).
+  4. Front sensor ≤ STOP_DISTANCE_CM → stop (ARRIVED).
   During approach, if the fire drifts off-center it stops and re-centers,
-  then resumes. Side sensors are ignored for now.
+  then resumes. When fire is lost it scans 360°, then free-roams.
+
+All tunables live in rover/config.py; the names below are thin aliases.
 """
 
 import time
 
-# ── Motor speeds (new Arduino interface: "CMD,SPEED", 0-255) ──────────────────
-SPEED_ALIGN    = 50    # slow + precise while centering (turns only)
-SPEED_APPROACH = 200   # forward speed while driving toward fire
-SPEED_SCAN  = 50    # continuous 360° search-spin speed
-SPEED_IDLE  = 200   # free-roam / idle wandering speed
+from rover.config import CONFIG
+from rover.protocol import STOP, fwd as _fwd, turn_l as _turn_l, turn_r as _turn_r
 
-STOP = "STOP"   # stop takes no speed argument
+_M = CONFIG.motion
+_A = CONFIG.autonomy
 
+# ── Motor speeds ──────────────────────────────────────────────────────────────
+SPEED_ALIGN    = _M.align
+SPEED_APPROACH = _M.approach
+SPEED_SCAN     = _M.scan
+SPEED_IDLE     = _M.idle
 
-def _fwd(speed):    return f"FWD,{int(speed)}"
-def _turn_l(speed): return f"TURN_L,{int(speed)}"
-def _turn_r(speed): return f"TURN_R,{int(speed)}"
-
-
-# ── Hardcoded turn durations — MEASURE on rig at each speed, then edit ─────────
-# Each = motor-on time for that rotation at its speed tier (ms).
-TURN_90_ALIGN_MS = 6120    # 90° at SPEED_ALIGN(50)  — align centering turns
-TURN_90_IDLE_MS  = 1530    # 90° at SPEED_IDLE(200)  — roam avoidance turns
-TURN_180_IDLE_MS = 3060    # 180° at SPEED_IDLE(200) — roam u-turn
-SCAN_360_MS      = 24480   # 360° at SPEED_SCAN(50)  — search spin  ← measure & fix
+# ── Hardcoded turn durations (motor-on time per rotation, ms) ─────────────────
+TURN_90_ALIGN_MS = _A.turn_90_align_ms
+TURN_90_IDLE_MS  = _A.turn_90_idle_ms
+TURN_180_IDLE_MS = _A.turn_180_idle_ms
+SCAN_360_MS      = _A.scan_360_ms
 
 # ── Alignment tuning ──────────────────────────────────────────────────────────
-ALIGNMENT_THRESHOLD = 40      # px from center counted as "centered" (dead zone)
-REALIGN_THRESHOLD   = 80      # px drift during approach before re-centering
-CAMERA_FOV          = 55      # camera horizontal field of view (degrees)
-HALF_FOV            = CAMERA_FOV / 2.0   # 27.5 deg maps to half-frame width
-SETTLE_TIME         = 0.35    # s to wait (stopped) after a turn before re-deciding
-MIN_TURN_MS         = 60      # floor so tiny turns still move the motors
-FIRE_LOST_GRACE     = 1.0     # s fire must stay gone before any search starts
+ALIGNMENT_THRESHOLD = _A.alignment_threshold
+REALIGN_THRESHOLD   = _A.realign_threshold
+CAMERA_FOV          = _A.camera_fov
+HALF_FOV            = _A.half_fov
+SETTLE_TIME         = _A.settle_time
+MIN_TURN_MS         = _A.min_turn_ms
+FIRE_LOST_GRACE     = _A.fire_lost_grace
 
 # ── Approach tuning ───────────────────────────────────────────────────────────
-STOP_DISTANCE_CM    = 20      # front distance to stop in front of the fire
-APPROACH_TIMEOUT    = 8.0     # s max continuous forward without arriving (safety)
+STOP_DISTANCE_CM    = _A.stop_distance_cm
+APPROACH_TIMEOUT    = _A.approach_timeout
 
 # ── Free-roam tuning ──────────────────────────────────────────────────────────
-
-# ── Free-roam tuning ──────────────────────────────────────────────────────────
-OBSTACLE_CM         = 30      # front distance that counts as a blocking obstacle
-SIDE_CM             = 30      # side distance above this counts as "free" to turn
-ROAM_SCAN_INTERVAL  = 10.0    # s of roaming between periodic 360 re-scans
+OBSTACLE_CM         = _A.obstacle_cm
+SIDE_CM             = _A.side_cm
+ROAM_SCAN_INTERVAL  = _A.roam_scan_interval
 
 
 def deviation_to_turn_ms(deviation_px, frame_half_w):
@@ -74,9 +70,8 @@ def deviation_to_turn_ms(deviation_px, frame_half_w):
 class Aligner:
     """Stateful, non-blocking align + approach decider.
 
-    Call update() once per video frame with the current main fire target and
-    the latest distance sensors. Returns the motor command to send (str) or
-    None (send nothing).
+    Call update() once per video frame with the fire deviation and the latest
+    distance sensors. Returns the motor command to send (str) or None.
     """
 
     IDLE      = "IDLE"
@@ -84,7 +79,7 @@ class Aligner:
     SETTLING  = "SETTLING"
     APPROACH  = "APPROACH"
     ARRIVED   = "ARRIVED"
-    SCANNING  = "SCANNING"     # stepped 360 sweep looking for fire
+    SCANNING  = "SCANNING"     # 360 sweep looking for fire
     ROAMING   = "ROAMING"      # free-roam wander with obstacle avoidance
 
     def __init__(self, logger=None):
@@ -125,13 +120,13 @@ class Aligner:
             self._log(msg, cls)
         return cmd
 
-    def update(self, main_target, frame_w, sensors=None, now=None):
+    def update(self, deviation, frame_w, sensors=None, now=None):
         """Decide the next motor command.
 
-        main_target: dict with 'deviation' (px, signed: +right/-left) or None.
-        frame_w:     current frame width (px).
-        sensors:     dict {left, center, right} in cm (center used for approach).
-        now:         wall-clock seconds (defaults to time.time()).
+        deviation: signed px from center (+right / -left), or None if no fire.
+        frame_w:   current frame width (px).
+        sensors:   dict {left, center, right} in cm (center used for approach).
+        now:       wall-clock seconds (defaults to time.time()).
 
         Returns: command string to send to Arduino, or None.
         """
@@ -143,10 +138,10 @@ class Aligner:
         center = sensors.get("center", 0) or 0
         left   = sensors.get("left", 0) or 0
         right  = sensors.get("right", 0) or 0
-        deviation = main_target["deviation"] if main_target else None
+        has_fire = deviation is not None
 
         # ── FIRE = HIGHEST PRIORITY — everything else is secondary ───────────
-        if main_target is not None:
+        if has_fire:
             self.fire_lost_since = None                 # reset grace timer
             if self.state in (self.SCANNING, self.ROAMING):
                 # snap out of search immediately and align this frame
@@ -178,7 +173,7 @@ class Aligner:
 
         # ── APPROACH: drive forward, watch fire + front sensor ──────────────
         if self.state == self.APPROACH:
-            if main_target is None:
+            if not has_fire:
                 return self._go(self.IDLE, "STOP",
                                 "✋ fire lost during approach — STOP", "warn")
             if center > 0 and center <= STOP_DISTANCE_CM:
@@ -198,7 +193,7 @@ class Aligner:
 
         # ── ARRIVED: hold. Re-acquire only if fire lost ─────────────────────
         if self.state == self.ARRIVED:
-            if main_target is None:
+            if not has_fire:
                 return self._go(self.IDLE, "STOP", "fire lost — back to idle", "warn")
             if self.last_sent != "STOP":
                 self.last_sent = "STOP"
@@ -206,7 +201,7 @@ class Aligner:
             return None
 
         # ── IDLE: decide based on current target ────────────────────────────
-        if main_target is None:
+        if not has_fire:
             # brief fire loss (flicker/frame-skip) → hold still, don't search yet
             if (now - self.fire_lost_since) < FIRE_LOST_GRACE:
                 if self.last_sent != "STOP":
@@ -221,7 +216,7 @@ class Aligner:
             if center > 0 and center <= STOP_DISTANCE_CM:
                 return self._go(self.ARRIVED, "STOP",
                                 f"✅ ARRIVED — front={center}cm STOP", "info")
-            # Centered, not there yet → start approaching at slow align speed
+            # Centered, not there yet → start approaching
             self.approach_start = now
             return self._go(self.APPROACH, _fwd(SPEED_APPROACH),
                             f"🎯 centered dev={deviation:+d}px → APPROACH (front={center}cm) @spd{SPEED_APPROACH}", "info")
