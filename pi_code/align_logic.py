@@ -103,6 +103,20 @@ class Aligner:
         self.roam_clear_start = 0.0  # when the current clear forward run began
         self.fire_lost_since = None  # wall-clock when fire was last lost (grace timer)
 
+    def reset(self):
+        """Reset FSM to IDLE — call when returning to auto mode after manual control."""
+        self.state = self.IDLE
+        self.turn_end = 0.0
+        self.settle_end = 0.0
+        self.approach_start = 0.0
+        self.last_sent = None
+        self.scan_steps_left = 0
+        self.scan_phase = "turn"
+        self.phase_end = 0.0
+        self.roam_phase = "drive"
+        self.roam_clear_start = 0.0
+        self.fire_lost_since = None
+
     def _go(self, state, cmd, msg, cls="info"):
         """Transition to a state, log it, and return the command to send."""
         self.state = state

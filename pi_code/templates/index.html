@@ -25,6 +25,48 @@
   }
   #conn-badge.connected { background: #0d3321; border-color: #238636; color: #3fb950; }
 
+  /* ── Mode toggle ── */
+  .mode-wrap { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  #mode-badge {
+    font-size: 0.75rem; font-weight: 700; padding: 3px 10px;
+    border-radius: 12px; letter-spacing: 0.06em;
+    background: #0d3321; border: 1px solid #238636; color: #3fb950;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  #mode-badge.manual {
+    background: #1a2a4a; border-color: #1f6feb; color: #58a6ff;
+  }
+  .toggle-switch { position: relative; display: inline-block; width: 44px; height: 22px; flex-shrink: 0; }
+  .toggle-switch input { display: none; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: #21262d; border: 1px solid #30363d; border-radius: 11px;
+    cursor: pointer; transition: background 0.2s, border-color 0.2s;
+  }
+  .toggle-track:before {
+    content: ''; position: absolute;
+    width: 16px; height: 16px; left: 2px; top: 2px;
+    background: #8b949e; border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-track { background: #1f3a5a; border-color: #1f6feb; }
+  .toggle-switch input:checked + .toggle-track:before { transform: translateX(22px); background: #58a6ff; }
+  .toggle-label { font-size: 0.78rem; color: #8b949e; }
+
+  /* ── Disabled controls overlay ── */
+  #controls-card.auto-locked {
+    position: relative;
+  }
+  #controls-card.auto-locked::after {
+    content: 'AUTO MODE — enable Manual Control to interact';
+    position: absolute; inset: 0; border-radius: 8px;
+    background: rgba(13,17,23,0.55);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; color: #8b949e; letter-spacing: 0.04em;
+    text-transform: uppercase; text-align: center; padding: 0 16px;
+    pointer-events: all; cursor: not-allowed;
+  }
+
   /* ── Main grid ── */
   main {
     flex: 1; display: grid;
@@ -120,6 +162,14 @@
 <header>
   <h1>🚗 Rover Dashboard</h1>
   <span id="conn-badge">● Disconnected</span>
+  <div class="mode-wrap">
+    <span id="mode-badge">AUTO</span>
+    <label class="toggle-switch" title="Toggle manual control">
+      <input type="checkbox" id="manual-toggle" onchange="setMode(this.checked)">
+      <span class="toggle-track"></span>
+    </label>
+    <span class="toggle-label">Manual</span>
+  </div>
 </header>
 
 <main>
@@ -188,7 +238,7 @@
     </div>
 
     <!-- Controls -->
-    <div class="card">
+    <div class="card auto-locked" id="controls-card" style="position:relative;">
       <div class="card-title">Motor Controls</div>
       <div id="controls">
         <div></div>
@@ -349,8 +399,39 @@ function addLog(msg, cls = '') {
   while (box.children.length > 100) box.removeChild(box.firstChild);
 }
 
+// ── Mode management ───────────────────────────────────────────────────────────
+let isManual = false;
+
+socket.on('mode_changed', (data) => {
+  applyMode(data.manual);
+});
+
+function setMode(manual) {
+  socket.emit('set_mode', { manual });
+}
+
+function applyMode(manual) {
+  isManual = manual;
+  const badge   = document.getElementById('mode-badge');
+  const toggle  = document.getElementById('manual-toggle');
+  const card    = document.getElementById('controls-card');
+
+  toggle.checked = manual;
+
+  if (manual) {
+    badge.textContent = 'MANUAL';
+    badge.classList.add('manual');
+    card.classList.remove('auto-locked');
+  } else {
+    badge.textContent = 'AUTO';
+    badge.classList.remove('manual');
+    card.classList.add('auto-locked');
+  }
+}
+
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
+  if (!isManual) return;
   const map = {
     'ArrowUp': 'FWD', 'ArrowDown': 'REV',
     'ArrowLeft': 'TURN_L', 'ArrowRight': 'TURN_R',

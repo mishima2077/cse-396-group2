@@ -21,7 +21,7 @@ import sys
 import cv2
 import serial
 from pathlib import Path
-from flask import Flask, Response, render_template
+from flask import Flask, Response, render_template, request
 from flask_socketio import SocketIO
 
 import align_logic
@@ -59,6 +59,10 @@ _running = True
 
 _yolo_fire_lock = threading.Lock()
 _yolo_fire = {"detected": False, "count": 0}  # updated by video_thread
+
+_manual_mode = False
+_manual_lock = threading.Lock()
+_aligner = None   # set in main(); readable by socket event handlers
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -254,13 +258,15 @@ def video_thread(camera_idx: int, yolo_model, aligner=None):
         main_target = max(fire_targets, key=lambda t: t["conf"]) if fire_targets else None
 
         # ── Alignment + approach brain (non-blocking) ──────────────────────
-        # Ask the algorithm what to do this frame; send + log any command.
         if aligner is not None:
-            with _sensor_lock:
-                sensors = dict(_latest_sensors)
-            cmd = aligner.update(main_target, w_frame, sensors, time.time())
-            if cmd is not None:
-                send_command(cmd)   # send_command mirrors it to the log bar
+            with _manual_lock:
+                is_manual = _manual_mode
+            if not is_manual:
+                with _sensor_lock:
+                    sensors = dict(_latest_sensors)
+                cmd = aligner.update(main_target, w_frame, sensors, time.time())
+                if cmd is not None:
+                    send_command(cmd)
 
         # Emit YOLO fire status (max 5 times/sec, always on change)
         now = time.time()
@@ -343,8 +349,37 @@ MOTION_CMDS = {"FWD", "REV", "TURN_L", "TURN_R"}
 SIMPLE_CMDS = {"STOP", "PUMP_ON", "PUMP_OFF"}
 
 
+@socketio.on("connect")
+def handle_connect():
+    with _manual_lock:
+        manual = _manual_mode
+    socketio.emit("mode_changed", {"manual": manual}, to=request.sid)
+
+
+@socketio.on("set_mode")
+def handle_set_mode(data):
+    global _manual_mode
+    manual = bool(data.get("manual", False))
+    with _manual_lock:
+        _manual_mode = manual
+    send_command("STOP")
+    if manual:
+        socketio.emit("log", {"msg": "⚙ MANUAL mode — FSM paused, dashboard in control", "cls": "warn"})
+    else:
+        if _aligner is not None:
+            _aligner.reset()
+        socketio.emit("log", {"msg": "⚙ AUTO mode — FSM active, dashboard locked", "cls": "info"})
+    socketio.emit("mode_changed", {"manual": manual})
+
+
 @socketio.on("command")
 def handle_command(data):
+    with _manual_lock:
+        is_manual = _manual_mode
+    if not is_manual:
+        socketio.emit("log", {"msg": "⚠ Enable Manual mode to send commands", "cls": "warn"},
+                      to=request.sid)
+        return
     cmd = str(data.get("cmd", "")).strip().upper()
     if cmd in MOTION_CMDS:
         # Speed comes from the dashboard slider; default to full speed.
@@ -405,11 +440,13 @@ def main():
     t_serial.start()
 
     # Alignment brain (pure logic module). Logs its decisions to the dashboard.
+    global _aligner
     aligner = None
     if not args.no_align:
         def _align_log(msg, cls="info"):
             socketio.emit("log", {"msg": msg, "cls": cls})
         aligner = align_logic.Aligner(logger=_align_log)
+        _aligner = aligner
         log("[ALIGN] Autonomous alignment ENABLED (Phase 1: align only)")
     else:
         log("[ALIGN] Disabled (observe only — no motor commands)")
