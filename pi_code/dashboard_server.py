@@ -29,8 +29,9 @@ import align_logic
 DEFAULT_MODEL  = Path(__file__).resolve().parent / "models" / "best.pt"
 HF_REPO        = "SalahALHaismawi/yolov26-fire-detection"
 HF_FILE        = "best.pt"
-ARDUINO_PORT   = "/dev/ttyUSB0"
+ARDUINO_PORT   = "/dev/ttyUSB1"
 ARDUINO_BAUD   = 115200
+MAX_SPEED      = 255   # default PWM speed (0-255) for manual motion commands
 YOLO_CONF      = 0.60
 FIRE_LABELS    = {"fire"}   # only these labels are tracked/aligned (ignore others)
 YOLO_IMGSZ     = 256  # 256 = faster than 320, still detects fire fine
@@ -173,9 +174,13 @@ def video_thread(camera_idx: int, yolo_model, aligner=None):
     global _latest_frame, _yolo_fire
 
     cap = cv2.VideoCapture(camera_idx)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 15)
+    # Request max resolution — driver clamps the oversized request to sensor max
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 10000)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 10000)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    _cam_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    _cam_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    log(f"[CAM] Resolution {_cam_w}x{_cam_h} @ {cap.get(cv2.CAP_PROP_FPS):.0f}fps")
 
     # warm-up
     for _ in range(5):
@@ -325,43 +330,26 @@ def sensors():
 
 # ── SocketIO events ───────────────────────────────────────────────────────────
 
+# Motion commands take a speed argument ("CMD,SPEED"); these don't.
+MOTION_CMDS = {"FWD", "REV", "TURN_L", "TURN_R"}
+SIMPLE_CMDS = {"STOP", "PUMP_ON", "PUMP_OFF"}
+
+
 @socketio.on("command")
 def handle_command(data):
     cmd = str(data.get("cmd", "")).strip().upper()
-    motion_cmds = {"FWD", "REV", "TURN_L", "TURN_R"}
-    simple_cmds = {"STOP", "PUMP_ON", "PUMP_OFF"}
-
-    parts = cmd.split(",")
-    base = parts[0]
-
-    if base in simple_cmds:
+    if cmd in MOTION_CMDS:
+        # Speed comes from the dashboard slider; default to full speed.
+        try:
+            speed = int(data.get("speed", MAX_SPEED))
+        except (TypeError, ValueError):
+            speed = MAX_SPEED
+        speed = max(0, min(255, speed))
+        send_command(f"{cmd},{speed}")
+    elif cmd in SIMPLE_CMDS:
         send_command(cmd)
-    elif base in motion_cmds:
-        if len(parts) == 2:
-            try:
-                spd = int(parts[1])
-                if 0 <= spd <= 255:
-                    send_command(cmd)
-                else:
-                    socketio.emit("log", {"msg": f"Speed out of range: {spd} (0-255)", "cls": "warn"})
-            except ValueError:
-                socketio.emit("log", {"msg": f"Invalid speed: {parts[1]}", "cls": "warn"})
-        else:
-            socketio.emit("log", {"msg": f"Motion command requires speed: {cmd}", "cls": "warn"})
-    elif cmd.startswith("SERVO,"):
-        if len(parts) == 2:
-            try:
-                angle = int(parts[1])
-                if 0 <= angle <= 180:
-                    send_command(cmd)
-                else:
-                    socketio.emit("log", {"msg": f"Servo angle out of range: {angle} (0-180)", "cls": "warn"})
-            except ValueError:
-                socketio.emit("log", {"msg": f"Invalid servo angle: {parts[1]}", "cls": "warn"})
-        else:
-            socketio.emit("log", {"msg": f"Bad servo command: {cmd}", "cls": "warn"})
     else:
-        socketio.emit("log", {"msg": f"Unknown command: {cmd}"})
+        socketio.emit("log", {"msg": f"Unknown command: {cmd}", "cls": "warn"})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

@@ -187,18 +187,6 @@
       </div>
     </div>
 
-    <!-- Speed Control -->
-    <div class="card">
-      <div class="card-title">Motor Speed</div>
-      <div style="padding:8px;">
-        <input id="speed-slider" type="range" min="0" max="255" value="255"
-          style="width:100%;cursor:pointer;">
-        <div style="text-align:center;margin-top:6px;font-size:0.85rem;color:#8b949e;">
-          <span id="speed-value">255</span> / 255
-        </div>
-      </div>
-    </div>
-
     <!-- Controls -->
     <div class="card">
       <div class="card-title">Motor Controls</div>
@@ -216,13 +204,13 @@
           <button onclick="cmd('PUMP_ON')">💧 Pump ON</button>
           <button onclick="cmd('PUMP_OFF')">🚫 Pump OFF</button>
         </div>
-        <div class="full-row" style="display:flex;gap:8px;margin-top:4px;">
-          <input id="servo-angle" type="number" min="0" max="180" value="90"
-            style="flex:1;padding:8px;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#e6edf3;font-size:0.85rem;text-align:center;"
-            placeholder="0-180°">
-          <button onclick="sendServo()" style="flex:1;border-color:#8b949e;color:#e6edf3;">
-            ⚙ Servo Turn
-          </button>
+        <div class="full-row" id="speed-row" style="margin-top:8px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:0.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;">Speed</span>
+            <input id="speed-slider" type="range" min="0" max="255" value="255"
+              style="flex:1;" oninput="document.getElementById('speed-val').textContent=this.value;">
+            <span id="speed-val" style="font-size:0.95rem;font-weight:700;font-family:monospace;color:#58a6ff;min-width:32px;text-align:right;">255</span>
+          </div>
         </div>
       </div>
     </div>
@@ -296,17 +284,17 @@ socket.on('fire_yolo', (data) => {
 
 socket.on('log', (data) => addLog(data.msg, data.cls || ''));
 
-// Speed slider update
-document.getElementById('speed-slider').addEventListener('input', (e) => {
-  document.getElementById('speed-value').textContent = e.target.value;
-});
+const MOTION_CMDS = new Set(['FWD', 'REV', 'TURN_L', 'TURN_R']);
 
 function cmd(c) {
-  const motionCmds = ["FWD", "REV", "TURN_L", "TURN_R"];
-  const speed = parseInt(document.getElementById("speed-slider").value);
-  const payload = motionCmds.includes(c) ? `${c},${speed}` : c;
-  socket.emit('command', {cmd: payload});
-  addLog('→ ' + payload, 'cmd');
+  if (MOTION_CMDS.has(c)) {
+    const speed = parseInt(document.getElementById('speed-slider').value, 10);
+    socket.emit('command', {cmd: c, speed: speed});
+    addLog('→ ' + c + ' @' + speed, 'cmd');
+  } else {
+    socket.emit('command', {cmd: c});
+    addLog('→ ' + c, 'cmd');
+  }
 }
 
 // ── Distance display ──────────────────────────────────────────────────────────
@@ -359,18 +347,6 @@ function addLog(msg, cls = '') {
   box.scrollTop = box.scrollHeight;
   // Keep last 100 lines
   while (box.children.length > 100) box.removeChild(box.firstChild);
-}
-
-// ── Servo control ─────────────────────────────────────────────────────────────
-function sendServo() {
-  const input = document.getElementById('servo-angle');
-  const angle = parseInt(input.value, 10);
-  if (isNaN(angle) || angle < 0 || angle > 180) {
-    addLog('Servo angle must be 0-180', 'warn');
-    return;
-  }
-  socket.emit('command', {cmd: `SERVO,${angle}`});
-  addLog(`→ SERVO,${angle}`, 'cmd');
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────

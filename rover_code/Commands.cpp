@@ -3,7 +3,6 @@
 #include "Commands.h"
 #include "Motors.h"
 #include "water_pump.h"
-#include "servo_ctrl.h"
 
 bool command_execute(const char* cmd) {
     if (!cmd || strlen(cmd) == 0) {
@@ -52,12 +51,6 @@ bool command_execute(const char* cmd) {
 
     if (strcmp(cmd, "PUMP_OFF") == 0) {
         pump_off();
-        return true;
-    }
-
-    if (strncmp(cmd, "SERVO,", 6) == 0) {
-        uint8_t angle = (uint8_t)atoi(cmd + 6);
-        servo_set(angle);
         return true;
     }
 

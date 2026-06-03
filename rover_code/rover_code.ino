@@ -6,7 +6,6 @@
 #include "water_pump.h"
 #include "Motors.h"
 #include "Commands.h"
-#include "servo_ctrl.h"
 
 SerialLink link;
 SensorData sensor_data;
@@ -23,7 +22,6 @@ void setup() {
     flame_init();
     pump_init();
     motors_init();
-    servo_init();
 }
 
 void loop() {

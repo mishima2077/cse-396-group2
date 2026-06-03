@@ -38,7 +38,4 @@ constexpr unsigned long SERIAL_BAUD = 115200UL;
 constexpr uint16_t SONAR_MAX_CM = 340;
 constexpr unsigned long SONAR_TRIG_US = 10UL;
 
-// ---- Servo (hose direction) ----------------------------------------------------
-constexpr uint8_t PIN_SERVO = 3;
-
 #endif // CONFIG_H
