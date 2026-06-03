@@ -8,10 +8,15 @@ Usage:
 
 Interactive mode:
     Enter commands:
-      fwd, rev, left, right, stop
+      fwd [speed], rev [speed], left [speed], right [speed], stop
       pump_on, pump_off
       servo <0-180>
       exit
+
+Speed: 0-255 (default 255). Examples:
+      fwd 200         - forward at 200/255 speed
+      left 150        - turn left at 150/255 speed
+      rev             - reverse at 255/255 speed
 
 Default port: /dev/ttyUSB0 (auto-detect)
 Default baud: 115200
@@ -38,8 +43,9 @@ def find_serial_port():
 def normalize_command(cmd):
     """Convert user input to Arduino command"""
     cmd = cmd.strip().upper()
+    parts = cmd.split()
 
-    aliases = {
+    motion_cmds = {
         'FWD': 'FWD',
         'F': 'FWD',
         'FORWARD': 'FWD',
@@ -52,6 +58,9 @@ def normalize_command(cmd):
         'RIGHT': 'TURN_R',
         'RT': 'TURN_R',
         'TURN_R': 'TURN_R',
+    }
+
+    simple_cmds = {
         'STOP': 'STOP',
         'S': 'STOP',
         'PUMP_ON': 'PUMP_ON',
@@ -60,11 +69,28 @@ def normalize_command(cmd):
         'POFF': 'PUMP_OFF',
     }
 
-    if cmd in aliases:
-        return aliases[cmd]
+    base_cmd = parts[0]
 
-    if cmd.startswith('SERVO ') or cmd.startswith('SRV '):
-        parts = cmd.split()
+    # Handle motion commands with optional speed
+    if base_cmd in motion_cmds:
+        speed = 255  # default speed
+        if len(parts) > 1:
+            try:
+                speed = int(parts[1])
+                if not (0 <= speed <= 255):
+                    print(f"  ! Speed out of range: {speed} (must be 0-255)")
+                    return None
+            except ValueError:
+                print(f"  ! Invalid speed: {parts[1]}")
+                return None
+        return f"{motion_cmds[base_cmd]},{speed}"
+
+    # Handle simple commands (no speed)
+    if base_cmd in simple_cmds:
+        return simple_cmds[base_cmd]
+
+    # Handle servo command
+    if base_cmd in ('SERVO', 'SRV'):
         try:
             angle = int(parts[1])
             if 0 <= angle <= 180:
@@ -78,17 +104,26 @@ def normalize_command(cmd):
 
 def print_help():
     print("\nAvailable commands:")
-    print("  fwd, f, forward      - Move forward")
-    print("  rev, r, reverse      - Move backward")
-    print("  left, l, turn_l      - Turn left")
-    print("  right, rt, turn_r    - Turn right")
-    print("  stop, s              - Stop motors")
-    print("  pump_on, pon         - Start water pump")
-    print("  pump_off, poff       - Stop water pump")
-    print("  servo <0-180>        - Set hose servo angle")
-    print("  srv <0-180>          - Set hose servo angle (short)")
-    print("  help                 - Show this message")
-    print("  exit, quit           - Exit program")
+    print("  Motion commands (optional speed 0-255, default 255):")
+    print("    fwd [speed], f [speed], forward [speed]   - Move forward")
+    print("    rev [speed], r [speed], reverse [speed]   - Move backward")
+    print("    left [speed], l [speed], turn_l [speed]   - Turn left")
+    print("    right [speed], rt [speed], turn_r [speed] - Turn right")
+    print("  ")
+    print("  Control commands:")
+    print("    stop, s              - Stop motors")
+    print("    pump_on, pon         - Start water pump")
+    print("    pump_off, poff       - Stop water pump")
+    print("    servo <0-180>        - Set hose servo angle")
+    print("    srv <0-180>          - Set hose servo angle (short)")
+    print("  ")
+    print("  Other:")
+    print("    help                 - Show this message")
+    print("    exit, quit           - Exit program")
+    print("\n  Examples:")
+    print("    fwd 200              - Forward at 200/255 speed")
+    print("    left 150             - Turn left at 150/255 speed")
+    print("    rev                  - Reverse at full speed (255)")
     print()
 
 def main():
