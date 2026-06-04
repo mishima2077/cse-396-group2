@@ -67,7 +67,7 @@ _EXT_SPD_FAST    = 70    # PWM for fast sweep
 _EXT_SETTLE_SLOW = 100   # ms pause between turns (slow phase)
 _EXT_SETTLE_FAST = 80    # ms pause between turns (fast phase)
 _EXT_PAUSE_MS    = 1500  # ms gap between phases (pump off → pump on)
-_EXT_DEG_FULL    = 20    # °  each oscillation step (left / right)
+_EXT_DEG_FULL    = 40    # °  each oscillation step (left / right)
 _EXT_DEG_HALF    = _EXT_DEG_FULL / 2   # °  initial offset right (+) and final return left (-)
 
 
