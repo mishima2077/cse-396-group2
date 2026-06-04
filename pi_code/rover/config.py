@@ -73,7 +73,7 @@ class AutonomyCfg:
 
     # Stepped scan (stop-and-look 360° — camera held still while YOLO runs)
     scan_step_deg: int = 30            # ° turned per scan step (360/step = # of looks)
-    scan_dwell_s: float = 0.6          # s stopped per step so detection sees clean frames
+    scan_dwell_s: float = 1.5          # s stopped per step so detection sees clean frames
 
     # Approach + docking tuning
     pump_start_cm: int = 30            # front distance to PUMP_ON + hand off to docking
