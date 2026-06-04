@@ -54,6 +54,9 @@ FIRE_LOST_GRACE     = _A.fire_lost_grace
 PUMP_START_CM       = _A.pump_start_cm
 STOP_DISTANCE_CM    = _A.stop_distance_cm
 APPROACH_TIMEOUT    = _A.approach_timeout
+CREEP_FWD_MS        = _A.creep_fwd_ms
+CREEP_SETTLE_MS     = _A.creep_settle_ms
+SPEED_CREEP         = 30              # extra-slow forward pulses for cautious ranging
 
 # ── Free-roam tuning ──────────────────────────────────────────────────────────
 OBSTACLE_CM         = _A.obstacle_cm
@@ -164,6 +167,7 @@ class Aligner:
     TURNING       = "TURNING"
     SETTLING      = "SETTLING"
     APPROACH      = "APPROACH"
+    CREEP         = "CREEP"          # pulse-forward / stop ranging inside PUMP_START_CM
     ARRIVED       = "ARRIVED"        # log-only label; immediately enters EXTINGUISHING
     EXTINGUISHING = "EXTINGUISHING"
     SCANNING      = "SCANNING"       # 360° sweep looking for fire
@@ -188,6 +192,9 @@ class Aligner:
         self._ext_step = 0
         self._ext_step_start = 0.0
         self._pump_armed = False     # pump pre-fired at PUMP_START_CM during approach
+        # cautious-creep state
+        self.creep_phase = "fwd"     # "fwd" | "settle"
+        self.creep_end = 0.0         # wall-clock end of the current creep phase
 
     def reset(self):
         """Reset FSM to IDLE — call when returning to auto mode after manual control."""
@@ -205,6 +212,8 @@ class Aligner:
         self._ext_step = 0
         self._ext_step_start = 0.0
         self._pump_armed = False
+        self.creep_phase = "fwd"
+        self.creep_end = 0.0
 
     def _go(self, state, cmd, msg, cls="info"):
         """Transition to a state, log it, and return the command to send."""
@@ -283,17 +292,52 @@ class Aligner:
             if (now - self.approach_start) > APPROACH_TIMEOUT:
                 return self._go(self.IDLE, "STOP",
                                 f"⏱ approach timeout ({APPROACH_TIMEOUT}s) — STOP (front={center}cm)", "warn")
-            # Pre-arm the pump while still driving once inside PUMP_START_CM.
-            if center > 0 and center <= PUMP_START_CM and not self._pump_armed:
+            # Inside the cautious zone → PUMP_ON + switch to creep (pulse-stop ranging).
+            if center > 0 and center <= PUMP_START_CM:
                 self._pump_armed = True
-                self.last_sent = "PUMP_ON"
-                self._log(f"💧 front={center}cm ≤ {PUMP_START_CM}cm → PUMP_ON (still approaching)", "info")
-                return "PUMP_ON"
+                self.creep_phase = "settle"
+                self.creep_end = now + CREEP_SETTLE_MS / 1000.0
+                return self._go(self.CREEP, "PUMP_ON",
+                                f"🐢💧 front={center}cm ≤ {PUMP_START_CM}cm → PUMP_ON + cautious creep", "info")
             fwd = _fwd(SPEED_APPROACH)
             if self.last_sent != fwd:
                 self.last_sent = fwd
                 return fwd
             return None
+
+        # ── CREEP: pulse-forward / stop near the fire for cautious ranging ────
+        if self.state == self.CREEP:
+            if not has_fire:
+                self._pump_armed = False
+                self.state = self.IDLE
+                self.last_sent = "PUMP_OFF"
+                self._log("✋ fire lost during creep — PUMP_OFF then STOP", "warn")
+                return "PUMP_OFF"
+            if center > 0 and center <= STOP_DISTANCE_CM:
+                self._log(f"✅ ARRIVED — front={center}cm → starting extinguish", "info")
+                return self._start_extinguish(now)
+            if abs(deviation) > REALIGN_THRESHOLD:
+                return self._go(self.IDLE, "STOP",
+                                f"↩ drifted dev={deviation:+d}px — STOP & re-center", "warn")
+            if not self._pump_armed:            # safety: keep pump on while creeping
+                self._pump_armed = True
+                self.last_sent = "PUMP_ON"
+                return "PUMP_ON"
+            if self.creep_phase == "fwd":
+                if now >= self.creep_end:       # pulse done → settle + read sensor
+                    self.creep_phase = "settle"
+                    self.creep_end = now + CREEP_SETTLE_MS / 1000.0
+                    self.last_sent = "STOP"
+                    return "STOP"
+                return None                     # mid forward pulse — keep moving
+            # settling — let the sensor stabilise, then start the next pulse
+            if now >= self.creep_end:
+                self.creep_phase = "fwd"
+                self.creep_end = now + CREEP_FWD_MS / 1000.0
+                cmd = _fwd(SPEED_CREEP)
+                self.last_sent = cmd
+                return cmd
+            return None                         # mid settle — reading sensor
 
         # ── IDLE: decide based on current target ─────────────────────────────
         if not has_fire:

@@ -68,9 +68,11 @@ class AutonomyCfg:
     fire_lost_grace: float = 1.0       # s fire must stay gone before any search
 
     # Approach tuning
-    pump_start_cm: int = 30            # front distance to pre-arm pump (still driving)
-    stop_distance_cm: int = 14         # front distance to stop + start extinguish
+    pump_start_cm: int = 30            # front distance to enter cautious creep + pump ON
+    stop_distance_cm: int = 10         # front distance to stop + start extinguish
     approach_timeout: float = 8.0      # s max forward without arriving (safety)
+    creep_fwd_ms: float = 250          # forward pulse length during cautious creep
+    creep_settle_ms: float = 300       # stop/settle (sensor read) between creep pulses
 
     # Free-roam tuning
     obstacle_cm: int = 30              # front distance counted as blocking
