@@ -3,10 +3,14 @@
 // Dead-reckoning constants derived from autonomy.py / config.py values.
 // FWD_CMS is a placeholder — measure on rig at each speed and update.
 
-const DR_TURN_RATE_DPS = {   // deg/s at PWM speed
-  50:  90 / (6120 / 1000),   // ≈ 14.7  (align + scan speed)
-  200: 90 / (1530 / 1000),   // ≈ 58.8  (idle/roam speed)
-};
+// Turn calibration — must match autonomy.py: a 90° pivot at full PWM (255)
+// takes TURN_90_MAX_MS, linear in both speed and angle. So the turn rate at any
+// speed is deg/s = speed * 90000 / (TURN_90_MAX_MS * 255)  (any PWM, not a table).
+const TURN_90_MAX_MS = 1200;
+const FULL_SPEED     = 255;
+function turnRateDps(speed) {
+  return (speed || 1) * 90000 / (TURN_90_MAX_MS * FULL_SPEED);  // ≈ 14.7@50, 23.5@80, 58.8@200
+}
 const DR_FWD_CMS = {          // cm/s — PLACEHOLDER, calibrate on rig
   200: 20,
   50:  5,
@@ -54,11 +58,9 @@ function drFinalize(nowMs) {
     RUN.stats.distCm += Math.abs(dist);
     dr.path.push({ x: dr.x, y: dr.y });
   } else if (c === 'TURN_R') {
-    const rate = DR_TURN_RATE_DPS[s] || 30;
-    dr.hdg = (dr.hdg + rate * dt + 360) % 360;
+    dr.hdg = (dr.hdg + turnRateDps(s) * dt + 360) % 360;
   } else if (c === 'TURN_L') {
-    const rate = DR_TURN_RATE_DPS[s] || 30;
-    dr.hdg = (dr.hdg - rate * dt + 360) % 360;
+    dr.hdg = (dr.hdg - turnRateDps(s) * dt + 360) % 360;
   }
 }
 

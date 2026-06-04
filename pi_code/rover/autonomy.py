@@ -12,12 +12,16 @@ wall-clock time + sensor readings, so no time.sleep ever stalls the caller.
 Mission flow:
   1. No fire         → hold still (STOP).
   2. Fire off-center → rotate to center it (TURN_L/R).
-  3. Fire centered   → drive forward toward it (FWD @approach speed).
-  4. Front ≤ PUMP_START_CM → PUMP_ON + CREEP (slow pulse-stop ranging).
-  5. Front ≤ STOP_DISTANCE_CM → EXTINGUISHING (fixed run-to-completion sweep).
-  6. Extinguish done → reverse ≈10cm → 360° re-scan → PARKED (stop, wait for fire).
-  During approach/creep, if the fire drifts off-center it stops and re-centers,
-  then resumes. When fire is lost mid-mission it scans 360°, then free-roams.
+  3. Fire centered   → drive forward toward it (FWD: fast far out, slow near).
+  4. Front ≤ PUMP_START_CM → STOP, PUMP_ON, hand off to DOCKING.
+  5. DOCKING → closed-loop fwd/rev nudges until front == DOCK_TARGET_CM ± tol,
+               confirmed over DOCK_CONFIRM_N reads → EXTINGUISHING.
+  6. EXTINGUISHING → fixed run-to-completion sweep.
+  7. Extinguish done → reverse ≈10cm → 360° re-scan → PARKED (stop, wait for fire).
+  During approach/dock, if the fire drifts off-center it stops and re-centers,
+  then resumes. Once a fire is acquired the rover is "engaged" and tolerates a
+  much longer loss (ENGAGED_GRACE_S) before giving up; only then does it scan
+  360° (stop-and-look steps) and, failing that, free-roam.
 
 All tunables live in rover/config.py; the names below are thin aliases.
 """
@@ -25,22 +29,35 @@ All tunables live in rover/config.py; the names below are thin aliases.
 import time
 
 from rover.config import CONFIG
-from rover.protocol import STOP, fwd as _fwd, rev as _rev, turn_l as _turn_l, turn_r as _turn_r
+from rover.protocol import STOP, SPEED_MAX, fwd as _fwd, rev as _rev, turn_l as _turn_l, turn_r as _turn_r
 
 _M = CONFIG.motion
 _A = CONFIG.autonomy
 
 # ── Motor speeds ──────────────────────────────────────────────────────────────
-SPEED_ALIGN    = _M.align
-SPEED_APPROACH = _M.approach
-SPEED_SCAN     = _M.scan
-SPEED_IDLE     = _M.idle
+SPEED_ALIGN         = _M.align
+SPEED_APPROACH      = _M.approach
+SPEED_APPROACH_SLOW = _M.approach_slow
+SPEED_SCAN          = _M.scan
+SPEED_IDLE          = _M.idle
+SPEED_DOCK          = _M.dock        # extra-slow fwd/rev pulses for closed-loop docking
 
-# ── Hardcoded turn durations (motor-on time per rotation, ms) ─────────────────
-TURN_90_ALIGN_MS = _A.turn_90_align_ms
-TURN_90_IDLE_MS  = _A.turn_90_idle_ms
-TURN_180_IDLE_MS = _A.turn_180_idle_ms
-SCAN_360_MS      = _A.scan_360_ms
+# ── Turn timing ───────────────────────────────────────────────────────────────
+# Everything derives from one rig datum (90° at full PWM takes TURN_90_MAX_MS),
+# assuming linear scaling in both speed and angle.
+TURN_90_MAX_MS = _A.turn_90_max_ms
+
+def turn_ms(speed, deg=90.0):
+    """Motor-on time (ms) for a `deg`° pivot at PWM `speed`.
+
+    Linear in both: slower speed → longer, smaller angle → shorter:
+        t = TURN_90_MAX_MS * (SPEED_MAX / speed) * (deg / 90)
+    """
+    return TURN_90_MAX_MS * (SPEED_MAX / max(1, speed)) * (deg / 90.0)
+
+TURN_90_ALIGN_MS = turn_ms(SPEED_ALIGN)         # 90° align/extinguish-sweep speed
+TURN_90_IDLE_MS  = turn_ms(SPEED_IDLE)          # 90° roam-avoidance turn
+TURN_180_IDLE_MS = turn_ms(SPEED_IDLE, 180.0)   # 180° roam U-turn
 
 # ── Alignment tuning ──────────────────────────────────────────────────────────
 ALIGNMENT_THRESHOLD = _A.alignment_threshold
@@ -50,14 +67,24 @@ HALF_FOV            = _A.half_fov
 SETTLE_TIME         = _A.settle_time
 MIN_TURN_MS         = _A.min_turn_ms
 FIRE_LOST_GRACE     = _A.fire_lost_grace
+ENGAGED_GRACE_S     = _A.engaged_grace_s
 
-# ── Approach tuning ───────────────────────────────────────────────────────────
-PUMP_START_CM       = _A.pump_start_cm
-STOP_DISTANCE_CM    = _A.stop_distance_cm
-APPROACH_TIMEOUT    = _A.approach_timeout
-CREEP_FWD_MS        = _A.creep_fwd_ms
-CREEP_SETTLE_MS     = _A.creep_settle_ms
-SPEED_CREEP         = 30              # extra-slow forward pulses for cautious ranging
+# ── Stepped scan tuning ───────────────────────────────────────────────────────
+SCAN_STEP_DEG = _A.scan_step_deg
+SCAN_DWELL_S  = _A.scan_dwell_s
+SCAN_STEP_MS  = turn_ms(SPEED_SCAN, SCAN_STEP_DEG)        # motor-on time per step
+SCAN_STEPS    = max(1, round(360 / SCAN_STEP_DEG))        # # of stop-and-look steps
+
+# ── Approach + docking tuning ─────────────────────────────────────────────────
+PUMP_START_CM    = _A.pump_start_cm
+APPROACH_SLOW_CM = _A.approach_slow_cm
+APPROACH_TIMEOUT = _A.approach_timeout
+DOCK_TARGET_CM   = _A.dock_target_cm
+DOCK_TOL_CM      = _A.dock_tol_cm
+DOCK_NUDGE_MS    = _A.dock_nudge_ms
+DOCK_SETTLE_MS   = _A.dock_settle_ms
+DOCK_CONFIRM_N   = _A.dock_confirm_n
+DOCK_TIMEOUT_S   = _A.dock_timeout_s
 
 # ── Free-roam tuning ──────────────────────────────────────────────────────────
 OBSTACLE_CM         = _A.obstacle_cm
@@ -151,10 +178,9 @@ _EXT_SEQUENCE = [
 
 def deviation_to_turn_ms(deviation_px, frame_half_w):
     """Pixel deviation from center → motor turn duration (ms) + angle (deg).
-    Duration uses the align-speed 90° time (turns happen at SPEED_ALIGN)."""
+    Duration is the time to pivot `angle`° at SPEED_ALIGN (turns happen slow)."""
     angle = (abs(deviation_px) / frame_half_w) * HALF_FOV
-    turn_ms = (angle / 90.0) * TURN_90_ALIGN_MS
-    return max(MIN_TURN_MS, turn_ms), angle
+    return max(MIN_TURN_MS, turn_ms(SPEED_ALIGN, angle)), angle
 
 
 class Aligner:
@@ -168,10 +194,10 @@ class Aligner:
     TURNING       = "TURNING"
     SETTLING      = "SETTLING"
     APPROACH      = "APPROACH"
-    CREEP         = "CREEP"          # pulse-forward / stop ranging inside PUMP_START_CM
+    DOCKING       = "DOCKING"        # closed-loop fwd/rev nudges to DOCK_TARGET_CM ± tol
     ARRIVED       = "ARRIVED"        # log-only label; immediately enters EXTINGUISHING
     EXTINGUISHING = "EXTINGUISHING"
-    SCANNING      = "SCANNING"       # 360° sweep looking for fire
+    SCANNING      = "SCANNING"       # 360° stop-and-look sweep looking for fire
     ROAMING       = "ROAMING"        # free-roam wander with obstacle avoidance
     PARKED        = "PARKED"         # mission done — hold still until fire returns
 
@@ -184,21 +210,24 @@ class Aligner:
         self.approach_start = 0.0   # wall-clock time the current approach began
         self.last_sent = None        # last command returned (avoids spam)
         # search/roam phase machinery (all wall-clock, non-blocking)
-        self.scan_steps_left = 0
+        self.scan_steps_left = 0     # stop-and-look steps remaining in the 360° sweep
         self.scan_phase = "turn"     # "turn" | "look" within a scan step
         self.phase_end = 0.0         # wall-clock end of the current scan/roam phase
         self.roam_phase = "drive"    # "drive" | "turn" within roaming
         self.roam_clear_start = 0.0  # when the current clear forward run began
         self.fire_lost_since = None  # wall-clock when fire was last lost (grace timer)
+        self._engaged = False        # committed to a fire → tolerate long losses
         # extinguish sequence state
         self._ext_step = 0
         self._ext_step_start = 0.0
         self._ext_phase = 0          # phase counter for logging (incremented per PUMP_ON)
-        self._pump_armed = False     # pump pre-fired at PUMP_START_CM during approach
+        self._pump_armed = False     # pump fired at the dock hand-off
         self._scan_then_stop = False # next 360° scan ends in STOP (not roam)
-        # cautious-creep state
-        self.creep_phase = "fwd"     # "fwd" | "settle"
-        self.creep_end = 0.0         # wall-clock end of the current creep phase
+        # closed-loop docking state
+        self.dock_phase = "settle"   # "move" (pulsing) | "settle" (stopped, reading)
+        self.dock_end = 0.0          # wall-clock end of the current dock phase
+        self.dock_confirm = 0        # consecutive in-band reads so far
+        self.dock_start = 0.0        # wall-clock dock entry (for the safety timeout)
 
     def reset(self):
         """Reset FSM to IDLE — call when returning to auto mode after manual control."""
@@ -213,13 +242,16 @@ class Aligner:
         self.roam_phase = "drive"
         self.roam_clear_start = 0.0
         self.fire_lost_since = None
+        self._engaged = False
         self._ext_step = 0
         self._ext_step_start = 0.0
         self._ext_phase = 0
         self._pump_armed = False
         self._scan_then_stop = False
-        self.creep_phase = "fwd"
-        self.creep_end = 0.0
+        self.dock_phase = "settle"
+        self.dock_end = 0.0
+        self.dock_confirm = 0
+        self.dock_start = 0.0
 
     def _go(self, state, cmd, msg, cls="info"):
         """Transition to a state, log it, and return the command to send."""
@@ -256,6 +288,7 @@ class Aligner:
         # ── FIRE = HIGHEST PRIORITY — everything else is secondary ───────────
         if has_fire:
             self.fire_lost_since = None                 # reset grace timer
+            self._engaged = True                        # commit — tolerate long losses
             if self.state in (self.SCANNING, self.ROAMING, self.PARKED):
                 # snap out of search/park immediately and align this frame
                 self.state = self.IDLE
@@ -286,84 +319,108 @@ class Aligner:
                 return None  # let camera/YOLO catch up before re-deciding
             self.state = self.IDLE  # settled — fall through and reassess now
 
-        # ── APPROACH: drive forward, watch fire + front sensor ───────────────
+        # ── APPROACH: drive forward (fast far out, slow near), watch fire ────
         if self.state == self.APPROACH:
             if not has_fire:
                 return self._go(self.IDLE, "STOP",
                                 "✋ fire lost during approach — STOP", "warn")
-            if center > 0 and center <= STOP_DISTANCE_CM:
-                self._log(f"✅ ARRIVED — front={center}cm → starting extinguish", "info")
-                return self._start_extinguish(now)
             if abs(deviation) > REALIGN_THRESHOLD:
                 return self._go(self.IDLE, "STOP",
                                 f"↩ drifted dev={deviation:+d}px — STOP & re-center", "warn")
             if (now - self.approach_start) > APPROACH_TIMEOUT:
                 return self._go(self.IDLE, "STOP",
                                 f"⏱ approach timeout ({APPROACH_TIMEOUT}s) — STOP (front={center}cm)", "warn")
-            # Inside the cautious zone → PUMP_ON + switch to creep (pulse-stop ranging).
+            # Reached docking range → STOP the fast approach, hand off to closed-loop docking.
             if center > 0 and center <= PUMP_START_CM:
-                self._pump_armed = True
-                self.creep_phase = "settle"
-                self.creep_end = now + CREEP_SETTLE_MS / 1000.0
-                return self._go(self.CREEP, "PUMP_ON",
-                                f"🐢💧 front={center}cm ≤ {PUMP_START_CM}cm → PUMP_ON + cautious creep", "info")
-            fwd = _fwd(SPEED_APPROACH)
+                return self._start_dock(now, center)
+            # Two-tier speed: full speed far out, slow once inside APPROACH_SLOW_CM
+            # (0 = no echo = still far) so we never barrel into the dock zone fast.
+            spd = SPEED_APPROACH if (center == 0 or center > APPROACH_SLOW_CM) else SPEED_APPROACH_SLOW
+            fwd = _fwd(spd)
             if self.last_sent != fwd:
                 self.last_sent = fwd
                 return fwd
             return None
 
-        # ── CREEP: pulse-forward / stop near the fire for cautious ranging ────
-        if self.state == self.CREEP:
+        # ── DOCKING: closed-loop fwd/rev nudges to converge on DOCK_TARGET_CM ─
+        if self.state == self.DOCKING:
             if not has_fire:
                 self._pump_armed = False
                 self.state = self.IDLE
                 self.last_sent = "PUMP_OFF"
-                self._log("✋ fire lost during creep — PUMP_OFF then STOP", "warn")
+                self._log("✋ fire lost during docking — PUMP_OFF then STOP", "warn")
                 return "PUMP_OFF"
-            if center > 0 and center <= STOP_DISTANCE_CM:
-                self._log(f"✅ ARRIVED — front={center}cm → starting extinguish", "info")
-                return self._start_extinguish(now)
             if abs(deviation) > REALIGN_THRESHOLD:
-                return self._go(self.IDLE, "STOP",
-                                f"↩ drifted dev={deviation:+d}px — STOP & re-center", "warn")
-            if not self._pump_armed:            # safety: keep pump on while creeping
+                self._pump_armed = False
+                return self._go(self.IDLE, "PUMP_OFF",
+                                f"↩ drifted dev={deviation:+d}px while docking — PUMP_OFF & re-center", "warn")
+            if (now - self.dock_start) > DOCK_TIMEOUT_S:
+                self._log(f"⏱ dock timeout ({DOCK_TIMEOUT_S}s) — extinguish at front={center}cm", "warn")
+                return self._start_extinguish(now)
+            # Arm the pump once, after the entry STOP has halted the fast approach.
+            if not self._pump_armed:
                 self._pump_armed = True
+                self.dock_phase = "settle"
+                self.dock_end = now + DOCK_SETTLE_MS / 1000.0
                 self.last_sent = "PUMP_ON"
                 return "PUMP_ON"
-            if self.creep_phase == "fwd":
-                if now >= self.creep_end:       # pulse done → settle + read sensor
-                    self.creep_phase = "settle"
-                    self.creep_end = now + CREEP_SETTLE_MS / 1000.0
+            # Mid nudge → keep moving until the pulse ends, then stop to read.
+            if self.dock_phase == "move":
+                if now >= self.dock_end:
+                    self.dock_phase = "settle"
+                    self.dock_end = now + DOCK_SETTLE_MS / 1000.0
                     self.last_sent = "STOP"
                     return "STOP"
-                return None                     # mid forward pulse — keep moving
-            # settling — let the sensor stabilise, then start the next pulse
-            if now >= self.creep_end:
-                self.creep_phase = "fwd"
-                self.creep_end = now + CREEP_FWD_MS / 1000.0
-                cmd = _fwd(SPEED_CREEP)
-                self.last_sent = cmd
-                return cmd
-            return None                         # mid settle — reading sensor
+                return None
+            # Settling — let the sonar stabilise before reading.
+            if now < self.dock_end:
+                return None
+            # Settle done → evaluate the front reading.
+            if center <= 0:                          # no echo this read → settle again
+                self.dock_end = now + DOCK_SETTLE_MS / 1000.0
+                return None
+            high = DOCK_TARGET_CM + DOCK_TOL_CM
+            low  = DOCK_TARGET_CM - DOCK_TOL_CM
+            if low <= center <= high:                # inside the band → confirm
+                self.dock_confirm += 1
+                if self.dock_confirm >= DOCK_CONFIRM_N:
+                    self._log(f"✅ DOCKED — front={center}cm "
+                              f"(target {DOCK_TARGET_CM}±{DOCK_TOL_CM}) → extinguish", "info")
+                    return self._start_extinguish(now)
+                self.dock_end = now + DOCK_SETTLE_MS / 1000.0   # hold for another read
+                return None
+            # Out of band → reset confirmation and nudge toward the target.
+            self.dock_confirm = 0
+            self.dock_phase = "move"
+            self.dock_end = now + DOCK_NUDGE_MS / 1000.0
+            if center > high:
+                cmd = _fwd(SPEED_DOCK)
+                self._log(f"🐢 dock front={center}cm > {high} → fwd nudge", "info")
+            else:
+                cmd = _rev(SPEED_DOCK)
+                self._log(f"🐢 dock front={center}cm < {low} → rev nudge", "info")
+            self.last_sent = cmd
+            return cmd
 
         # ── IDLE: decide based on current target ─────────────────────────────
         if not has_fire:
-            # brief fire loss (flicker/frame-skip) → hold still, don't search yet
-            if (now - self.fire_lost_since) < FIRE_LOST_GRACE:
+            # Hold while within grace; a committed (engaged) fire gets a much
+            # longer leash so the camera keeps trying to re-acquire before search.
+            grace = ENGAGED_GRACE_S if self._engaged else FIRE_LOST_GRACE
+            if (now - self.fire_lost_since) < grace:
                 if self.last_sent != "STOP":
                     self.last_sent = "STOP"
                     return "STOP"
                 return None
-            # fire truly gone → start a 360 scan; nothing found → roam
+            # Grace expired → drop the commitment and start a 360 scan; else roam.
+            self._engaged = False
             return self._start_scan(now)
 
         if abs(deviation) <= ALIGNMENT_THRESHOLD:
-            # Centered — already at the fire?
-            if center > 0 and center <= STOP_DISTANCE_CM:
-                self._log(f"✅ ARRIVED — front={center}cm → starting extinguish", "info")
-                return self._start_extinguish(now)
-            # Centered, not there yet → start approaching
+            # Centered, already inside docking range → converge precisely first.
+            if center > 0 and center <= PUMP_START_CM:
+                return self._start_dock(now, center)
+            # Centered, still far → drive in.
             self.approach_start = now
             return self._go(self.APPROACH, _fwd(SPEED_APPROACH),
                             f"🎯 centered dev={deviation:+d}px → APPROACH (front={center}cm) @spd{SPEED_APPROACH}", "info")
@@ -415,6 +472,7 @@ class Aligner:
         self._ext_step += 1
         if self._ext_step >= len(_EXT_SEQUENCE):
             self._pump_armed = False
+            self._engaged = False           # fire dealt with — drop commitment
             self._scan_then_stop = True
             self._log("✅ EXTINGUISH complete — pump off, backed off → 360° re-scan then STOP", "info")
             return self._start_scan(now)
@@ -439,27 +497,69 @@ class Aligner:
         self.last_sent = cmd
         return cmd
 
-    # ── SCANNING: one continuous 360° spin at scan speed ─────────────────────
+    # ── DOCKING: closed-loop converge to DOCK_TARGET_CM before extinguishing ──
+    def _start_dock(self, now, center):
+        """Enter DOCKING: STOP the fast approach now, then converge in closed loop.
+
+        The pump is armed on the *next* tick (after this STOP lands) so the rover
+        is fully halted before water flows — this is what prevents the old
+        "coast at FWD,200 through the settle window → slam" failure. Returns the
+        entry STOP command."""
+        self._pump_armed = False
+        self.dock_phase = "settle"
+        self.dock_end = now + DOCK_SETTLE_MS / 1000.0
+        self.dock_confirm = 0
+        self.dock_start = now
+        return self._go(self.DOCKING, STOP,
+                        f"🛬 front={center}cm ≤ {PUMP_START_CM}cm → STOP, dock to "
+                        f"{DOCK_TARGET_CM}±{DOCK_TOL_CM}cm", "info")
+
+    # ── SCANNING: stepped stop-and-look 360° sweep ────────────────────────────
     def _start_scan(self, now):
-        """Spin a full 360° at scan speed. Fire is caught by preemption upstream
-        (aborts the spin instantly); a completed spin with no fire → roam."""
-        self.phase_end = now + SCAN_360_MS / 1000.0
+        """Begin a 360° sweep as SCAN_STEPS discrete turn→look steps.
+
+        Each step spins SCAN_STEP_DEG° then stops for SCAN_DWELL_S so YOLO sees
+        motion-free frames. Fire is caught by preemption upstream (aborts the
+        sweep instantly); a completed sweep with no fire → roam (or PARK after
+        an extinguish)."""
+        self.scan_steps_left = SCAN_STEPS
+        self.scan_phase = "turn"
+        self.phase_end = now + SCAN_STEP_MS / 1000.0
         return self._go(self.SCANNING, _turn_r(SPEED_SCAN),
-                        f"🔍 360° search spin @spd{SPEED_SCAN} ({SCAN_360_MS:.0f}ms)", "info")
+                        f"🔍 step-scan {SCAN_STEPS}×{SCAN_STEP_DEG}° @spd{SPEED_SCAN}, "
+                        f"dwell {SCAN_DWELL_S}s/step", "info")
 
     def _scan_tick(self, now):
-        """Keep spinning until 360° done. Fire = preemption upstream.
+        """Advance the stepped sweep. Fire = preemption upstream.
 
-        A post-extinguish scan ends in STOP (mission cool-down); a normal
-        fire-lost scan falls through to free-roam.
+        turn phase: spin one step, then STOP and dwell.
+        look phase: hold still through the dwell so detection runs on clean
+        frames, then start the next step or finish (PARK after an extinguish,
+        otherwise free-roam).
         """
-        if now >= self.phase_end:
+        if self.scan_phase == "turn":
+            if now >= self.phase_end:                   # step turn done → stop & look
+                self.scan_phase = "look"
+                self.phase_end = now + SCAN_DWELL_S
+                self.last_sent = "STOP"
+                return "STOP"
+            return None                                 # still turning this step
+
+        # look phase — camera held still for YOLO
+        if now < self.phase_end:
+            return None
+        self.scan_steps_left -= 1
+        if self.scan_steps_left <= 0:                   # full 360° covered, no fire
             if self._scan_then_stop:
                 self._scan_then_stop = False
                 return self._go(self.PARKED, STOP,
                                 "🛑 post-extinguish 360° done → PARKED (idle, waiting for fire)", "info")
             return self._start_roam(now)
-        return None                                # still spinning, send nothing
+        self.scan_phase = "turn"                         # next step
+        self.phase_end = now + SCAN_STEP_MS / 1000.0
+        cmd = _turn_r(SPEED_SCAN)
+        self.last_sent = cmd
+        return cmd
 
     # ── ROAMING: wander forward, avoid obstacles, periodic re-scan ───────────
     def _start_roam(self, now):

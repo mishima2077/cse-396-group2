@@ -44,35 +44,47 @@ class VisionCfg:
 # ── Motion speeds (PWM 0-255, sent as "CMD,SPEED") ────────────────────────────
 @dataclass(frozen=True)
 class MotionCfg:
-    align: int = 50        # slow + precise while centering (turns only)
-    approach: int = 200    # forward toward fire
-    scan: int = 50         # continuous 360° search-spin
-    idle: int = 200        # free-roam / idle wandering
+    align: int = 50         # slow + precise while centering (turns only)
+    approach: int = 200     # fast forward toward fire (far out)
+    approach_slow: int = 80 # forward in the final stretch before docking
+    scan: int = 80          # 360° step-scan spin (bumped — recalibrate turn_90_scan_ms)
+    idle: int = 200         # free-roam / idle wandering
+    dock: int = 30          # fwd/rev nudges while converging on the dock target
 
 
 # ── Autonomy (alignment + approach + roam FSM) ────────────────────────────────
 @dataclass(frozen=True)
 class AutonomyCfg:
-    # Hardcoded turn durations — MEASURE on rig at each speed, then edit (ms).
-    turn_90_align_ms: float = 6120     # 90° at MotionCfg.align(50)
-    turn_90_idle_ms: float = 1530      # 90° at MotionCfg.idle(200)
-    turn_180_idle_ms: float = 3060     # 180° at MotionCfg.idle(200)
-    scan_360_ms: float = 24480         # 360° at MotionCfg.scan(50)
+    # Turn calibration — ONE measured datum drives every turn duration.
+    # Rig measurement: a 90° pivot at full PWM (255) takes turn_90_max_ms.
+    # Duration is assumed linear in both speed and angle, so for any turn:
+    #     turn_ms = turn_90_max_ms * (255 / speed) * (deg / 90)
+    # (e.g. 90° @ speed 50 → 6120ms, @ 80 → 3825ms, @ 200 → 1530ms.)
+    turn_90_max_ms: float = 1200       # 90° at PWM 255 — MEASURE on rig
 
     # Alignment tuning
     alignment_threshold: int = 40      # px from center = "centered" (dead zone)
-    realign_threshold: int = 80        # px drift during approach before re-center
+    realign_threshold: int = 80        # px drift during approach/dock before re-center
     camera_fov: float = 55.0           # camera horizontal FOV (degrees)
     settle_time: float = 0.35          # s stopped after a turn before re-deciding
     min_turn_ms: float = 60            # floor so tiny turns still move the motors
-    fire_lost_grace: float = 1.0       # s fire must stay gone before any search
+    fire_lost_grace: float = 5.0       # s fire must stay gone before any search
+    engaged_grace_s: float = 12.0      # s a committed fire may stay lost before giving up
 
-    # Approach tuning
-    pump_start_cm: int = 30            # front distance to enter cautious creep + pump ON
-    stop_distance_cm: int = 10         # front distance to stop + start extinguish
-    approach_timeout: float = 8.0      # s max forward without arriving (safety)
-    creep_fwd_ms: float = 250          # forward pulse length during cautious creep
-    creep_settle_ms: float = 300       # stop/settle (sensor read) between creep pulses
+    # Stepped scan (stop-and-look 360° — camera held still while YOLO runs)
+    scan_step_deg: int = 30            # ° turned per scan step (360/step = # of looks)
+    scan_dwell_s: float = 0.6          # s stopped per step so detection sees clean frames
+
+    # Approach + docking tuning
+    pump_start_cm: int = 30            # front distance to PUMP_ON + hand off to docking
+    approach_slow_cm: int = 50         # front distance to drop from fast to slow approach
+    approach_timeout: float = 8.0      # s max forward without docking (safety)
+    dock_target_cm: int = 10           # closed-loop front-distance target before extinguish
+    dock_tol_cm: int = 2               # ± band around target counted as "docked"
+    dock_nudge_ms: float = 120         # fwd/rev pulse length while converging
+    dock_settle_ms: float = 300        # stop/settle (sensor read) between nudges
+    dock_confirm_n: int = 2            # consecutive in-band reads required to extinguish
+    dock_timeout_s: float = 12.0       # safety: extinguish at current range if not converged
 
     # Free-roam tuning
     obstacle_cm: int = 30              # front distance counted as blocking
