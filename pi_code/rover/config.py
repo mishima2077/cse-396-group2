@@ -82,7 +82,7 @@ class AutonomyCfg:
                                        #   on the front sensor alone to the target
     approach_slow_cm: int = 50         # front distance to drop from fast to slow approach
     approach_timeout: float = 8.0      # s max forward without docking (safety)
-    dock_target_cm: int = 30           # closed-loop front-distance target before extinguish
+    dock_target_cm: int = 27           # closed-loop front-distance target before extinguish
     dock_tol_cm: int = 2               # ± band around target counted as "docked" (8–12cm)
     dock_nudge_ms: float = 220         # fwd/rev pulse length — longer = more ground per nudge
     dock_settle_ms: float = 120        # stop/settle (sensor read) between nudges — kept short
