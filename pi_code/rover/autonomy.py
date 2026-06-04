@@ -74,6 +74,8 @@ _EXT_SETTLE_FAST = 50    # ms pause between turns (fast phase)
 _EXT_PAUSE_MS    = 1500  # ms gap between phases
 _EXT_CORRECT_MS  = _EXT_MS/2  # final right-nudge to hit true center — tune on rig
 _EXT_SPD_DRIVE   = 50    # PWM for forward/reverse phase 3
+_EXT_NUDGE_CM    = 10    # cm threshold — nudge forward between steps if farther
+_EXT_NUDGE_MS    = 300   # ms per forward nudge pulse
 _EXT_DRIVE_MS    = _EXT_MS   # ms per fwd/rev step — tune on rig
 _EXT_SETTLE_DRIVE = 100  # ms pause between fwd/rev steps
 _EXT_BACKOFF_MS  = 1000  # ms reverse ≈ 10cm back-off after extinguish — tune on rig
@@ -191,6 +193,7 @@ class Aligner:
         # extinguish sequence state
         self._ext_step = 0
         self._ext_step_start = 0.0
+        self._ext_nudge_until = 0.0
         self._pump_armed = False     # pump pre-fired at PUMP_START_CM during approach
         # cautious-creep state
         self.creep_phase = "fwd"     # "fwd" | "settle"
@@ -211,6 +214,7 @@ class Aligner:
         self.fire_lost_since = None
         self._ext_step = 0
         self._ext_step_start = 0.0
+        self._ext_nudge_until = 0.0
         self._pump_armed = False
         self.creep_phase = "fwd"
         self.creep_end = 0.0
@@ -245,7 +249,7 @@ class Aligner:
 
         # ── EXTINGUISHING runs to completion — nothing interrupts it ─────────
         if self.state == self.EXTINGUISHING:
-            return self._extinguish_tick(now)
+            return self._extinguish_tick(now, center)
 
         # ── FIRE = HIGHEST PRIORITY — everything else is secondary ───────────
         if has_fire:
@@ -388,28 +392,50 @@ class Aligner:
         if action in ("STOP", "WAIT"):  return STOP
         return action  # "PUMP_ON" or "PUMP_OFF" passed through verbatim
 
-    def _extinguish_tick(self, now):
+    def _extinguish_tick(self, now, center):
         """Advance the extinguish sequence one tick. Called every frame."""
+        # Mid-nudge: wait for the forward pulse, then start the pending step
+        if self._ext_nudge_until > 0:
+            if now < self._ext_nudge_until:
+                return None
+            self._ext_nudge_until = 0.0
+            if center > 0 and center > _EXT_NUDGE_CM:
+                # still too far — nudge again
+                self._ext_nudge_until = now + _EXT_NUDGE_MS / 1000.0
+                return _fwd(SPEED_APPROACH)
+            # close enough — start the pending step
+            self._ext_step_start = now
+            step = _EXT_SEQUENCE[self._ext_step]
+            cmd = self._ext_cmd(step)
+            self.last_sent = cmd
+            return cmd
+
+        # Normal step timing check
         action, duration_ms, _ = _EXT_SEQUENCE[self._ext_step]
         if (now - self._ext_step_start) < duration_ms / 1000.0:
             return None  # current step still running
 
-        # Advance to the next step
+        # Step complete — advance
         self._ext_step += 1
         if self._ext_step >= len(_EXT_SEQUENCE):
             self._pump_armed = False
-            self._log("✅ Extinguish complete (backed off) → 360° re-scan", "info")
+            self._log("✅ Extinguish complete → 360° re-scan", "info")
             return self._start_scan(now)
 
+        # Check distance before starting the next step
+        if center > 0 and center > _EXT_NUDGE_CM:
+            self._ext_nudge_until = now + _EXT_NUDGE_MS / 1000.0
+            self._log(f"🚶 nudge fwd (front={center}cm > {_EXT_NUDGE_CM}cm)", "info")
+            return _fwd(SPEED_APPROACH)
+
+        # Within range — execute next step immediately
         self._ext_step_start = now
         step = _EXT_SEQUENCE[self._ext_step]
         action, _, _ = step
-
         if action == "WAIT":
             self._log(f"🚿 slow sweep done — pausing {_EXT_PAUSE_MS}ms", "info")
         elif action == "PUMP_ON" and self._ext_step > 1:
             self._log("🚿 fast sweep starting — pump ON", "info")
-
         cmd = self._ext_cmd(step)
         self.last_sent = cmd
         return cmd
