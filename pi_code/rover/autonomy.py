@@ -68,6 +68,7 @@ _EXT_SPD_FAST    = 80    # PWM for phase 2
 _EXT_SETTLE_SLOW = 150   # ms pause between turns (slow phase)
 _EXT_SETTLE_FAST = 50    # ms pause between turns (fast phase)
 _EXT_PAUSE_MS    = 1500  # ms gap between phases
+_EXT_CORRECT_MS  = _EXT_MS  # final right-nudge to hit true center — tune on rig
 
 # Each step: (action, duration_ms, speed)
 #   Pattern per phase: L R R L L R R L — 2 back-and-forth cycles, ends at center.
@@ -111,6 +112,8 @@ _EXT_SEQUENCE = [
     ("TURN_L",   _EXT_MS, _EXT_SPD_FAST),
     ("STOP",     0,       None),
     ("PUMP_OFF", 0,       None),
+    ("TURN_R",   _EXT_CORRECT_MS, _EXT_SPD_SLOW),
+    ("STOP",     0,       None),
 ]
 
 
