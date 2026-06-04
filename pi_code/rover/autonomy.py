@@ -24,7 +24,7 @@ All tunables live in rover/config.py; the names below are thin aliases.
 import time
 
 from rover.config import CONFIG
-from rover.protocol import STOP, fwd as _fwd, turn_l as _turn_l, turn_r as _turn_r
+from rover.protocol import STOP, fwd as _fwd, rev as _rev, turn_l as _turn_l, turn_r as _turn_r
 
 _M = CONFIG.motion
 _A = CONFIG.autonomy
@@ -68,7 +68,10 @@ _EXT_SPD_FAST    = 80    # PWM for phase 2
 _EXT_SETTLE_SLOW = 150   # ms pause between turns (slow phase)
 _EXT_SETTLE_FAST = 50    # ms pause between turns (fast phase)
 _EXT_PAUSE_MS    = 1500  # ms gap between phases
-_EXT_CORRECT_MS  = _EXT_MS  # final right-nudge to hit true center — tune on rig
+_EXT_CORRECT_MS  = _EXT_MS/2  # final right-nudge to hit true center — tune on rig
+_EXT_SPD_DRIVE   = 50    # PWM for forward/reverse phase 3
+_EXT_DRIVE_MS    = _EXT_MS   # ms per fwd/rev step — tune on rig
+_EXT_SETTLE_DRIVE = 100  # ms pause between fwd/rev steps
 
 # Each step: (action, duration_ms, speed)
 #   Pattern per phase: L R R L L R R L — 2 back-and-forth cycles, ends at center.
@@ -113,6 +116,24 @@ _EXT_SEQUENCE = [
     ("STOP",     0,       None),
     ("PUMP_OFF", 0,       None),
     ("TURN_R",   _EXT_CORRECT_MS, _EXT_SPD_SLOW),
+    ("STOP",     0,       None),
+    # ── Phase 3: forward / reverse ────────────────────────────────────────────
+    # Pattern: F R R F F R R F — 2 cycles, ends at start position.
+    ("FWD",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
+    ("STOP",     _EXT_SETTLE_DRIVE, None),
+    ("REV",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
+    ("STOP",     _EXT_SETTLE_DRIVE, None),
+    ("REV",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
+    ("STOP",     _EXT_SETTLE_DRIVE, None),
+    ("FWD",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
+    ("STOP",     _EXT_SETTLE_DRIVE, None),
+    ("FWD",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
+    ("STOP",     _EXT_SETTLE_DRIVE, None),
+    ("REV",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
+    ("STOP",     _EXT_SETTLE_DRIVE, None),
+    ("REV",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
+    ("STOP",     _EXT_SETTLE_DRIVE, None),
+    ("FWD",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
     ("STOP",     0,       None),
 ]
 
@@ -301,12 +322,11 @@ class Aligner:
     def _ext_cmd(self, step):
         """Build the Arduino command for one extinguish step."""
         action, _, speed = step
-        if action == "TURN_R":
-            return _turn_r(speed)
-        if action == "TURN_L":
-            return _turn_l(speed)
-        if action in ("STOP", "WAIT"):
-            return STOP
+        if action == "TURN_R":  return _turn_r(speed)
+        if action == "TURN_L":  return _turn_l(speed)
+        if action == "FWD":     return _fwd(speed)
+        if action == "REV":     return _rev(speed)
+        if action in ("STOP", "WAIT"):  return STOP
         return action  # "PUMP_ON" or "PUMP_OFF" passed through verbatim
 
     def _extinguish_tick(self, now):
