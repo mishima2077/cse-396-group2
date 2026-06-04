@@ -119,6 +119,7 @@ _EXT_SEQUENCE = [
     ("STOP",     0,       None),
     # ── Phase 3: forward / reverse ────────────────────────────────────────────
     # Pattern: F R R F F R R F — 2 cycles, ends at start position.
+    ("PUMP_ON",  0,       None),
     ("FWD",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
     ("STOP",     _EXT_SETTLE_DRIVE, None),
     ("REV",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
@@ -135,6 +136,7 @@ _EXT_SEQUENCE = [
     ("STOP",     _EXT_SETTLE_DRIVE, None),
     ("FWD",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
     ("STOP",     0,       None),
+    ("PUMP_OFF", 0,       None),
 ]
 
 
