@@ -68,7 +68,8 @@ class AutonomyCfg:
     fire_lost_grace: float = 1.0       # s fire must stay gone before any search
 
     # Approach tuning
-    stop_distance_cm: int = 20         # front distance to stop in front of fire
+    pump_start_cm: int = 30            # front distance to pre-arm pump (still driving)
+    stop_distance_cm: int = 14         # front distance to stop + start extinguish
     approach_timeout: float = 8.0      # s max forward without arriving (safety)
 
     # Free-roam tuning

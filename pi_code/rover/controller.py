@@ -34,7 +34,7 @@ class RoverController:
         self._on_mode = on_mode or (lambda manual: None)
         self.autonomy_enabled = autonomy_enabled
         self.aligner = Aligner(logger=on_log)
-        self._manual = False
+        self._manual = True          # boot in manual — operator drives until AUTO chosen
         self._lock = threading.Lock()
 
     @property
@@ -48,6 +48,7 @@ class RoverController:
         with self._lock:
             self._manual = manual
         self.send(protocol.STOP)
+        self.send("PUMP_OFF")        # never leave the pump running across a mode switch
         if manual:
             self._log("⚙ MANUAL mode — FSM paused, dashboard in control", "warn")
         else:

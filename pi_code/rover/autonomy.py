@@ -51,6 +51,7 @@ MIN_TURN_MS         = _A.min_turn_ms
 FIRE_LOST_GRACE     = _A.fire_lost_grace
 
 # ── Approach tuning ───────────────────────────────────────────────────────────
+PUMP_START_CM       = _A.pump_start_cm
 STOP_DISTANCE_CM    = _A.stop_distance_cm
 APPROACH_TIMEOUT    = _A.approach_timeout
 
@@ -72,6 +73,7 @@ _EXT_CORRECT_MS  = _EXT_MS/2  # final right-nudge to hit true center — tune on
 _EXT_SPD_DRIVE   = 50    # PWM for forward/reverse phase 3
 _EXT_DRIVE_MS    = _EXT_MS   # ms per fwd/rev step — tune on rig
 _EXT_SETTLE_DRIVE = 100  # ms pause between fwd/rev steps
+_EXT_BACKOFF_MS  = 1000  # ms reverse ≈ 10cm back-off after extinguish — tune on rig
 
 # Each step: (action, duration_ms, speed)
 #   Pattern per phase: L R R L L R R L — 2 back-and-forth cycles, ends at center.
@@ -137,6 +139,9 @@ _EXT_SEQUENCE = [
     ("FWD",      _EXT_DRIVE_MS, _EXT_SPD_DRIVE),
     ("STOP",     0,       None),
     ("PUMP_OFF", 0,       None),
+    # ── Back-off: reverse ≈10cm so the 360° re-scan starts clear of the fire ──
+    ("REV",      _EXT_BACKOFF_MS, _EXT_SPD_DRIVE),
+    ("STOP",     0,       None),
 ]
 
 
@@ -182,6 +187,7 @@ class Aligner:
         # extinguish sequence state
         self._ext_step = 0
         self._ext_step_start = 0.0
+        self._pump_armed = False     # pump pre-fired at PUMP_START_CM during approach
 
     def reset(self):
         """Reset FSM to IDLE — call when returning to auto mode after manual control."""
@@ -198,6 +204,7 @@ class Aligner:
         self.fire_lost_since = None
         self._ext_step = 0
         self._ext_step_start = 0.0
+        self._pump_armed = False
 
     def _go(self, state, cmd, msg, cls="info"):
         """Transition to a state, log it, and return the command to send."""
@@ -276,6 +283,12 @@ class Aligner:
             if (now - self.approach_start) > APPROACH_TIMEOUT:
                 return self._go(self.IDLE, "STOP",
                                 f"⏱ approach timeout ({APPROACH_TIMEOUT}s) — STOP (front={center}cm)", "warn")
+            # Pre-arm the pump while still driving once inside PUMP_START_CM.
+            if center > 0 and center <= PUMP_START_CM and not self._pump_armed:
+                self._pump_armed = True
+                self.last_sent = "PUMP_ON"
+                self._log(f"💧 front={center}cm ≤ {PUMP_START_CM}cm → PUMP_ON (still approaching)", "info")
+                return "PUMP_ON"
             fwd = _fwd(SPEED_APPROACH)
             if self.last_sent != fwd:
                 self.last_sent = fwd
@@ -340,7 +353,9 @@ class Aligner:
         # Advance to the next step
         self._ext_step += 1
         if self._ext_step >= len(_EXT_SEQUENCE):
-            return self._go(self.IDLE, STOP, "✅ Extinguish complete → IDLE", "info")
+            self._pump_armed = False
+            self._log("✅ Extinguish complete (backed off) → 360° re-scan", "info")
+            return self._start_scan(now)
 
         self._ext_step_start = now
         step = _EXT_SEQUENCE[self._ext_step]
