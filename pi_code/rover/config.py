@@ -77,10 +77,13 @@ class AutonomyCfg:
 
     # Approach + docking tuning
     pump_start_cm: int = 20            # front distance to PUMP_ON + hand off to docking
+    dock_commit_cm: int = 20           # at/below this, docking ignores the camera (fire
+                                       #   detection is unreliable this close) and drives
+                                       #   on the front sensor alone to the target
     approach_slow_cm: int = 50         # front distance to drop from fast to slow approach
     approach_timeout: float = 8.0      # s max forward without docking (safety)
     dock_target_cm: int = 10           # closed-loop front-distance target before extinguish
-    dock_tol_cm: int = 2               # ± band around target counted as "docked" (7–13cm)
+    dock_tol_cm: int = 2               # ± band around target counted as "docked" (8–12cm)
     dock_nudge_ms: float = 220         # fwd/rev pulse length — longer = more ground per nudge
     dock_settle_ms: float = 120        # stop/settle (sensor read) between nudges — kept short
     dock_confirm_n: int = 1            # in-band reads to extinguish (sensor is reliable → 1)

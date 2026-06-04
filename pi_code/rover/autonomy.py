@@ -77,6 +77,7 @@ SCAN_STEPS    = max(1, round(360 / SCAN_STEP_DEG))        # # of stop-and-look s
 
 # ── Approach + docking tuning ─────────────────────────────────────────────────
 PUMP_START_CM    = _A.pump_start_cm
+DOCK_COMMIT_CM   = _A.dock_commit_cm
 APPROACH_SLOW_CM = _A.approach_slow_cm
 APPROACH_TIMEOUT = _A.approach_timeout
 DOCK_TARGET_CM   = _A.dock_target_cm
@@ -228,6 +229,7 @@ class Aligner:
         self.dock_end = 0.0          # wall-clock end of the current dock phase
         self.dock_confirm = 0        # consecutive in-band reads so far
         self.dock_start = 0.0        # wall-clock dock entry (for the safety timeout)
+        self._dock_committed = False # latched once inside DOCK_COMMIT_CM → ignore camera
 
     def reset(self):
         """Reset FSM to IDLE — call when returning to auto mode after manual control."""
@@ -252,6 +254,7 @@ class Aligner:
         self.dock_end = 0.0
         self.dock_confirm = 0
         self.dock_start = 0.0
+        self._dock_committed = False
 
     def _go(self, state, cmd, msg, cls="info"):
         """Transition to a state, log it, and return the command to send."""
@@ -344,16 +347,26 @@ class Aligner:
 
         # ── DOCKING: closed-loop fwd/rev nudges to converge on DOCK_TARGET_CM ─
         if self.state == self.DOCKING:
-            if not has_fire:
-                self._pump_armed = False
-                self.state = self.IDLE
-                self.last_sent = "PUMP_OFF"
-                self._log("✋ fire lost during docking — PUMP_OFF then STOP", "warn")
-                return "PUMP_OFF"
-            if abs(deviation) > REALIGN_THRESHOLD:
-                self._pump_armed = False
-                return self._go(self.IDLE, "PUMP_OFF",
-                                f"↩ drifted dev={deviation:+d}px while docking — PUMP_OFF & re-center", "warn")
+            # Latch "committed" once inside the commit range: this close the camera
+            # is unreliable (the fire fills or leaves the frame), so we stop trusting
+            # it and drive on the front sensor alone — push to target, then extinguish.
+            if not self._dock_committed and 0 < center <= DOCK_COMMIT_CM:
+                self._dock_committed = True
+                self._log(f"🔒 dock committed at front={center}cm ≤ {DOCK_COMMIT_CM}cm — "
+                          f"sensor-only to {DOCK_TARGET_CM}cm (camera ignored)", "info")
+            # While NOT yet committed (farther out) the camera is trusted: abandon
+            # on fire loss or big drift so we re-acquire/re-center before closing in.
+            if not self._dock_committed:
+                if not has_fire:
+                    self._pump_armed = False
+                    self.state = self.IDLE
+                    self.last_sent = "PUMP_OFF"
+                    self._log("✋ fire lost during docking — PUMP_OFF then STOP", "warn")
+                    return "PUMP_OFF"
+                if abs(deviation) > REALIGN_THRESHOLD:
+                    self._pump_armed = False
+                    return self._go(self.IDLE, "PUMP_OFF",
+                                    f"↩ drifted dev={deviation:+d}px while docking — PUMP_OFF & re-center", "warn")
             if (now - self.dock_start) > DOCK_TIMEOUT_S:
                 self._log(f"⏱ dock timeout ({DOCK_TIMEOUT_S}s) — extinguish at front={center}cm", "warn")
                 return self._start_extinguish(now)
@@ -506,6 +519,7 @@ class Aligner:
         "coast at FWD,200 through the settle window → slam" failure. Returns the
         entry STOP command."""
         self._pump_armed = False
+        self._dock_committed = False
         self.dock_phase = "settle"
         self.dock_end = now + DOCK_SETTLE_MS / 1000.0
         self.dock_confirm = 0

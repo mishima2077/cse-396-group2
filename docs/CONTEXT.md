@@ -228,10 +228,11 @@ dead-reckoning turn rate.
 | `fire_lost_grace` | 5.0 s | Fire absent this long (un-engaged) before search |
 | `engaged_grace_s` | 12.0 s | Committed-fire leash before giving up |
 | `pump_start_cm` | 20 cm | Front distance to STOP + PUMP_ON + start docking |
+| `dock_commit_cm` | 20 cm | At/below this, docking ignores the camera and drives on the front sensor alone |
 | `approach_slow_cm` | 50 cm | Front distance to drop fast→slow approach speed |
 | `approach_timeout` | 8.0 s | Safety: abort approach if not docking |
 | `dock_target_cm` | 10 cm | Closed-loop front-distance target before extinguish |
-| `dock_tol_cm` | 3 cm | ± band around target counted as "docked" (7–13 cm) |
+| `dock_tol_cm` | 2 cm | ± band around target counted as "docked" (8–12 cm) |
 | `dock_nudge_ms` | 220 ms | Fwd/rev pulse length (longer = more ground per nudge) |
 | `dock_settle_ms` | 120 ms | Stop/settle (sensor read) between nudges (kept short) |
 | `dock_confirm_n` | 1 | In-band reads required to extinguish (reliable sensor) |
@@ -293,12 +294,12 @@ IDLE ──── no fire > grace (5s, or 12s if engaged) ──→ SCANNING (st
                               │ settled                  ↓                       │
                               ↓                       SCANNING               ROAMING (turn phase)
   fire centered, far ─────→ APPROACH                                             │ turn done
-                              │ front ≤ 30cm → STOP                              └───────────────
+                              │ front ≤ 20cm → STOP                              └───────────────
                               ↓
-                          DOCKING  ── front = 10±2cm (×2) ──→ EXTINGUISHING
+                          DOCKING  ── front = 10±2cm ──→ EXTINGUISHING
                               │ (closed-loop fwd/rev nudges)      │ sequence complete
                               │                                   ↓ back-off + post-ext 360°
-  fire centered + ≤30cm ──────────────────────────────────→ SCANNING ──→ PARKED
+  fire centered + ≤20cm ──────────────────────────────────→ SCANNING ──→ PARKED
                                                                         │ fire returns
                                                                         └──→ IDLE
    (APPROACH/DOCKING: drift > 80px / fire lost / timeout → STOP → IDLE)
@@ -311,6 +312,8 @@ IDLE ──── no fire > grace (5s, or 12s if engaged) ──→ SCANNING (st
 **Engagement / grace:** once any fire is seen, `_engaged` is set. While engaged, a fire loss is tolerated for `ENGAGED_GRACE_S=12s` (vs `FIRE_LOST_GRACE=5s` un-engaged) before the FSM gives up and scans — so the rover "commits" to a spotted fire and doesn't abandon it on brief detection dropouts. `_engaged` clears on extinguish completion or when the long grace expires.
 
 **Reliable docking (`DOCKING`):** entry sends `STOP` first and arms the pump only on the *next* tick (once fully halted) — this fixes the old slam where the rover coasted at `FWD,200` through the settle window. It then closed-loops onto `dock_target_cm ± dock_tol_cm` with **both forward and reverse** nudges, requiring `dock_confirm_n` consecutive in-band reads before extinguishing.
+
+**Dock commit (camera blind-spot):** YOLO detection drops out at close range (the fire fills or leaves the frame), which used to make docking abandon back to IDLE on `has_fire == False`. Now, once the front sensor reads `≤ dock_commit_cm`, docking **latches committed** (`_dock_committed`) and stops consulting the camera entirely — no fire-loss or drift abort — driving on the reliable distance sensor to `dock_target_cm` and then extinguishing. Camera-based abandon/re-center only applies while *not yet* committed (i.e. when `dock_commit_cm < pump_start_cm`, for the outer slice of the dock). The `dock_timeout_s` safety still bounds the whole phase.
 
 **Post-extinguish cool-down:** a 360° scan flagged `_scan_then_stop` ends in PARKED (not roam). PARKED holds still until fire returns, then preemption kicks it back to IDLE.
 
