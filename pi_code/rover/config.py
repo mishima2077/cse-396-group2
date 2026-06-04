@@ -76,14 +76,14 @@ class AutonomyCfg:
     scan_dwell_s: float = 1.5          # s stopped per step so detection sees clean frames
 
     # Approach + docking tuning
-    pump_start_cm: int = 30            # front distance to PUMP_ON + hand off to docking
+    pump_start_cm: int = 20            # front distance to PUMP_ON + hand off to docking
     approach_slow_cm: int = 50         # front distance to drop from fast to slow approach
     approach_timeout: float = 8.0      # s max forward without docking (safety)
     dock_target_cm: int = 10           # closed-loop front-distance target before extinguish
-    dock_tol_cm: int = 2               # ± band around target counted as "docked"
-    dock_nudge_ms: float = 120         # fwd/rev pulse length while converging
-    dock_settle_ms: float = 300        # stop/settle (sensor read) between nudges
-    dock_confirm_n: int = 2            # consecutive in-band reads required to extinguish
+    dock_tol_cm: int = 2               # ± band around target counted as "docked" (7–13cm)
+    dock_nudge_ms: float = 220         # fwd/rev pulse length — longer = more ground per nudge
+    dock_settle_ms: float = 120        # stop/settle (sensor read) between nudges — kept short
+    dock_confirm_n: int = 1            # in-band reads to extinguish (sensor is reliable → 1)
     dock_timeout_s: float = 12.0       # safety: extinguish at current range if not converged
 
     # Free-roam tuning

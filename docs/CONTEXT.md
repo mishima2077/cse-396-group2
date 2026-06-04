@@ -187,7 +187,7 @@ Pure decision logic with zero I/O. Called once per video frame via `aligner.upda
 1. **No fire** → hold still (`STOP`).
 2. **Fire off-center** → rotate to center it (`TURN_L/R` @ align speed).
 3. **Fire centered, far** → drive forward (`FWD`, **two-tier**: fast far out, slow once inside `APPROACH_SLOW_CM`).
-4. **Front ≤ `PUMP_START_CM` (30 cm)** → `STOP`, then `PUMP_ON`, hand off to **DOCKING**.
+4. **Front ≤ `PUMP_START_CM` (20 cm)** → `STOP`, then `PUMP_ON`, hand off to **DOCKING**.
 5. **DOCKING** → closed-loop `FWD`/`REV` nudges until front is `DOCK_TARGET_CM ± DOCK_TOL_CM` (10±2 cm), confirmed over `DOCK_CONFIRM_N` reads → **EXTINGUISHING**.
 6. **EXTINGUISHING** → fixed, run-to-completion choreography.
 7. **Extinguish done** → reverse ≈10 cm back-off → 360° re-scan → **PARKED** (hold still, wait for fire).
@@ -227,14 +227,14 @@ dead-reckoning turn rate.
 | `min_turn_ms` | 60 ms | Minimum motor-on time for any turn |
 | `fire_lost_grace` | 5.0 s | Fire absent this long (un-engaged) before search |
 | `engaged_grace_s` | 12.0 s | Committed-fire leash before giving up |
-| `pump_start_cm` | 30 cm | Front distance to STOP + PUMP_ON + start docking |
+| `pump_start_cm` | 20 cm | Front distance to STOP + PUMP_ON + start docking |
 | `approach_slow_cm` | 50 cm | Front distance to drop fast→slow approach speed |
 | `approach_timeout` | 8.0 s | Safety: abort approach if not docking |
 | `dock_target_cm` | 10 cm | Closed-loop front-distance target before extinguish |
-| `dock_tol_cm` | 2 cm | ± band around target counted as "docked" |
-| `dock_nudge_ms` | 120 ms | Fwd/rev pulse length while converging |
-| `dock_settle_ms` | 300 ms | Stop/settle (sensor read) between nudges |
-| `dock_confirm_n` | 2 | Consecutive in-band reads required to extinguish |
+| `dock_tol_cm` | 3 cm | ± band around target counted as "docked" (7–13 cm) |
+| `dock_nudge_ms` | 220 ms | Fwd/rev pulse length (longer = more ground per nudge) |
+| `dock_settle_ms` | 120 ms | Stop/settle (sensor read) between nudges (kept short) |
+| `dock_confirm_n` | 1 | In-band reads required to extinguish (reliable sensor) |
 | `dock_timeout_s` | 12.0 s | Safety: extinguish at current range if not converged |
 
 #### Stepped-Scan Tuning (`config.py` → `AutonomyCfg`)
