@@ -12,11 +12,12 @@ wall-clock time + sensor readings, so no time.sleep ever stalls the caller.
 Mission flow:
   1. No fire         → hold still (STOP).
   2. Fire off-center → rotate to center it (TURN_L/R).
-  3. Fire centered   → drive forward toward it (FWD).
-  4. Front sensor ≤ STOP_DISTANCE_CM → ARRIVED → EXTINGUISHING.
-  5. EXTINGUISHING   → oscillating pump sweep (slow then fast) → IDLE.
-  During approach, if the fire drifts off-center it stops and re-centers,
-  then resumes. When fire is lost it scans 360°, then free-roams.
+  3. Fire centered   → drive forward toward it (FWD @approach speed).
+  4. Front ≤ PUMP_START_CM → PUMP_ON + CREEP (slow pulse-stop ranging).
+  5. Front ≤ STOP_DISTANCE_CM → EXTINGUISHING (fixed run-to-completion sweep).
+  6. Extinguish done → reverse ≈10cm → 360° re-scan → PARKED (stop, wait for fire).
+  During approach/creep, if the fire drifts off-center it stops and re-centers,
+  then resumes. When fire is lost mid-mission it scans 360°, then free-roams.
 
 All tunables live in rover/config.py; the names below are thin aliases.
 """
@@ -74,9 +75,6 @@ _EXT_SETTLE_FAST = 50    # ms pause between turns (fast phase)
 _EXT_PAUSE_MS    = 1500  # ms gap between phases
 _EXT_CORRECT_MS  = _EXT_MS/2  # final right-nudge to hit true center — tune on rig
 _EXT_SPD_DRIVE   = 50    # PWM for forward/reverse phase 3
-_EXT_NUDGE_CM    = 10    # cm threshold — nudge forward between steps if farther
-_EXT_NUDGE_MS    = 300   # ms per forward nudge pulse
-_EXT_VALID_CM    = 30    # readings above this are false (sonar noise / max-range dummy)
 _EXT_DRIVE_MS    = _EXT_MS   # ms per fwd/rev step — tune on rig
 _EXT_SETTLE_DRIVE = 100  # ms pause between fwd/rev steps
 _EXT_BACKOFF_MS  = 1000  # ms reverse ≈ 10cm back-off after extinguish — tune on rig
@@ -175,6 +173,7 @@ class Aligner:
     EXTINGUISHING = "EXTINGUISHING"
     SCANNING      = "SCANNING"       # 360° sweep looking for fire
     ROAMING       = "ROAMING"        # free-roam wander with obstacle avoidance
+    PARKED        = "PARKED"         # mission done — hold still until fire returns
 
     def __init__(self, logger=None):
         # logger(msg: str, cls: str) — optional, mirrors decisions to dashboard
@@ -194,9 +193,9 @@ class Aligner:
         # extinguish sequence state
         self._ext_step = 0
         self._ext_step_start = 0.0
-        self._ext_nudge_until = 0.0
-        self._ext_sensor_wait = False
+        self._ext_phase = 0          # phase counter for logging (incremented per PUMP_ON)
         self._pump_armed = False     # pump pre-fired at PUMP_START_CM during approach
+        self._scan_then_stop = False # next 360° scan ends in STOP (not roam)
         # cautious-creep state
         self.creep_phase = "fwd"     # "fwd" | "settle"
         self.creep_end = 0.0         # wall-clock end of the current creep phase
@@ -216,9 +215,9 @@ class Aligner:
         self.fire_lost_since = None
         self._ext_step = 0
         self._ext_step_start = 0.0
-        self._ext_nudge_until = 0.0
-        self._ext_sensor_wait = False
+        self._ext_phase = 0
         self._pump_armed = False
+        self._scan_then_stop = False
         self.creep_phase = "fwd"
         self.creep_end = 0.0
 
@@ -252,16 +251,16 @@ class Aligner:
 
         # ── EXTINGUISHING runs to completion — nothing interrupts it ─────────
         if self.state == self.EXTINGUISHING:
-            return self._extinguish_tick(now, center)
+            return self._extinguish_tick(now)
 
         # ── FIRE = HIGHEST PRIORITY — everything else is secondary ───────────
         if has_fire:
             self.fire_lost_since = None                 # reset grace timer
-            if self.state in (self.SCANNING, self.ROAMING):
-                # snap out of search immediately and align this frame
+            if self.state in (self.SCANNING, self.ROAMING, self.PARKED):
+                # snap out of search/park immediately and align this frame
                 self.state = self.IDLE
                 self.last_sent = "STOP"
-                self._log("🔥 fire spotted — abort search → align", "info")
+                self._log("🔥 fire spotted — re-engage → align", "info")
         elif self.fire_lost_since is None:
             self.fire_lost_since = now                  # start grace countdown
 
@@ -270,6 +269,8 @@ class Aligner:
             return self._scan_tick(now)
         if self.state == self.ROAMING:
             return self._roam_tick(now, center, left, right)
+        if self.state == self.PARKED:
+            return None    # mission done — hold still; exits only when fire returns
 
         # ── Finish an in-progress turn (non-blocking) ────────────────────────
         if self.state == self.TURNING:
@@ -375,12 +376,16 @@ class Aligner:
                         f"↺ dev={deviation:+d}px → {angle:.1f}° {cmd} for {turn_ms:.0f}ms", "info")
 
     # ── EXTINGUISHING: timed oscillating pump sweep ───────────────────────────
+    _EXT_PHASE_NAMES = {1: "slow sweep", 2: "fast sweep", 3: "fwd/rev drive"}
+
     def _start_extinguish(self, now):
-        """Enter EXTINGUISHING and execute the first step immediately."""
+        """Enter EXTINGUISHING and fire the first step immediately."""
         self.state = self.EXTINGUISHING
         self._ext_step = 0
         self._ext_step_start = now
-        self._log("🚿 extinguish sequence started — slow sweep, pump ON", "info")
+        self._ext_phase = 1
+        n = len(_EXT_SEQUENCE)
+        self._log(f"🚿 ENTER EXTINGUISHING — {n} fixed steps · Phase 1 (slow sweep) · pump ON", "info")
         cmd = self._ext_cmd(_EXT_SEQUENCE[0])
         self.last_sent = cmd
         return cmd
@@ -395,59 +400,41 @@ class Aligner:
         if action in ("STOP", "WAIT"):  return STOP
         return action  # "PUMP_ON" or "PUMP_OFF" passed through verbatim
 
-    def _extinguish_tick(self, now, center):
-        """Advance the extinguish sequence one tick. Called every frame."""
-        valid = center <= _EXT_VALID_CM  # >30 cm is a false/max-range sonar reading
+    def _extinguish_tick(self, now):
+        """Advance the FIXED extinguish choreography one step.
 
-        # Waiting for a valid sensor reading before starting the next step
-        if self._ext_sensor_wait:
-            if not valid:
-                return None
-            self._ext_sensor_wait = False
-            return self._ext_start_step(now, center)
-
-        # Mid-nudge: wait for the forward pulse, then re-evaluate
-        if self._ext_nudge_until > 0:
-            if now < self._ext_nudge_until:
-                return None
-            self._ext_nudge_until = 0.0
-            if not valid:
-                self._ext_sensor_wait = True
-                return None
-            return self._ext_start_step(now, center)
-
-        # Normal step timing check
+        Runs to completion, uninterrupted — no sensors, no nudges. Each step
+        plays for its hardcoded duration, then the next begins. Detailed logs
+        mark every phase and motion so the sequence is fully traceable.
+        """
         _, duration_ms, _ = _EXT_SEQUENCE[self._ext_step]
         if (now - self._ext_step_start) < duration_ms / 1000.0:
-            return None  # current step still running
+            return None  # current step still playing — hold (send nothing)
 
-        # Step complete — advance
+        # Current step done → advance to the next.
         self._ext_step += 1
         if self._ext_step >= len(_EXT_SEQUENCE):
             self._pump_armed = False
-            self._log("✅ Extinguish complete → 360° re-scan", "info")
+            self._scan_then_stop = True
+            self._log("✅ EXTINGUISH complete — pump off, backed off → 360° re-scan then STOP", "info")
             return self._start_scan(now)
 
-        if not valid:
-            self._ext_sensor_wait = True
-            self._log(f"⏳ sensor={center}cm — waiting for valid reading", "info")
-            return None
-
-        return self._ext_start_step(now, center)
-
-    def _ext_start_step(self, now, center):
-        """Nudge forward if needed, then execute the current pending step."""
-        if center > 0 and center > _EXT_NUDGE_CM:
-            self._ext_nudge_until = now + _EXT_NUDGE_MS / 1000.0
-            self._log(f"🚶 nudge fwd (front={center}cm > {_EXT_NUDGE_CM}cm)", "info")
-            return _fwd(SPEED_APPROACH)
         self._ext_step_start = now
         step = _EXT_SEQUENCE[self._ext_step]
-        action = step[0]
-        if action == "WAIT":
-            self._log(f"🚿 slow sweep done — pausing {_EXT_PAUSE_MS}ms", "info")
-        elif action == "PUMP_ON" and self._ext_step > 1:
-            self._log("🚿 fast sweep starting — pump ON", "info")
+        action, _, spd = step
+
+        # Milestone banners + per-motion trace.
+        if action == "PUMP_ON":
+            self._ext_phase += 1
+            name = self._EXT_PHASE_NAMES.get(self._ext_phase, "sweep")
+            self._log(f"🚿 Phase {self._ext_phase} ({name}) — pump ON", "info")
+        elif action == "PUMP_OFF":
+            self._log(f"🚿 Phase {self._ext_phase} done — pump OFF", "info")
+        elif action == "WAIT":
+            self._log(f"⏸ pause {_EXT_PAUSE_MS}ms before next phase", "info")
+        elif action in ("TURN_L", "TURN_R", "FWD", "REV"):
+            self._log(f"🚿 ext {self._ext_step + 1}/{len(_EXT_SEQUENCE)}: {action},{spd}", "info")
+
         cmd = self._ext_cmd(step)
         self.last_sent = cmd
         return cmd
@@ -461,8 +448,16 @@ class Aligner:
                         f"🔍 360° search spin @spd{SPEED_SCAN} ({SCAN_360_MS:.0f}ms)", "info")
 
     def _scan_tick(self, now):
-        """Keep spinning until 360° done, then roam. Fire = preemption upstream."""
+        """Keep spinning until 360° done. Fire = preemption upstream.
+
+        A post-extinguish scan ends in STOP (mission cool-down); a normal
+        fire-lost scan falls through to free-roam.
+        """
         if now >= self.phase_end:
+            if self._scan_then_stop:
+                self._scan_then_stop = False
+                return self._go(self.PARKED, STOP,
+                                "🛑 post-extinguish 360° done → PARKED (idle, waiting for fire)", "info")
             return self._start_roam(now)
         return None                                # still spinning, send nothing
 
