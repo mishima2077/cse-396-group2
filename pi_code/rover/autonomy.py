@@ -76,6 +76,7 @@ _EXT_CORRECT_MS  = _EXT_MS/2  # final right-nudge to hit true center — tune on
 _EXT_SPD_DRIVE   = 50    # PWM for forward/reverse phase 3
 _EXT_NUDGE_CM    = 10    # cm threshold — nudge forward between steps if farther
 _EXT_NUDGE_MS    = 300   # ms per forward nudge pulse
+_EXT_VALID_CM    = 30    # readings above this are false (sonar noise / max-range dummy)
 _EXT_DRIVE_MS    = _EXT_MS   # ms per fwd/rev step — tune on rig
 _EXT_SETTLE_DRIVE = 100  # ms pause between fwd/rev steps
 _EXT_BACKOFF_MS  = 1000  # ms reverse ≈ 10cm back-off after extinguish — tune on rig
@@ -194,6 +195,7 @@ class Aligner:
         self._ext_step = 0
         self._ext_step_start = 0.0
         self._ext_nudge_until = 0.0
+        self._ext_sensor_wait = False
         self._pump_armed = False     # pump pre-fired at PUMP_START_CM during approach
         # cautious-creep state
         self.creep_phase = "fwd"     # "fwd" | "settle"
@@ -215,6 +217,7 @@ class Aligner:
         self._ext_step = 0
         self._ext_step_start = 0.0
         self._ext_nudge_until = 0.0
+        self._ext_sensor_wait = False
         self._pump_armed = False
         self.creep_phase = "fwd"
         self.creep_end = 0.0
@@ -394,24 +397,27 @@ class Aligner:
 
     def _extinguish_tick(self, now, center):
         """Advance the extinguish sequence one tick. Called every frame."""
-        # Mid-nudge: wait for the forward pulse, then start the pending step
+        valid = center <= _EXT_VALID_CM  # >30 cm is a false/max-range sonar reading
+
+        # Waiting for a valid sensor reading before starting the next step
+        if self._ext_sensor_wait:
+            if not valid:
+                return None
+            self._ext_sensor_wait = False
+            return self._ext_start_step(now, center)
+
+        # Mid-nudge: wait for the forward pulse, then re-evaluate
         if self._ext_nudge_until > 0:
             if now < self._ext_nudge_until:
                 return None
             self._ext_nudge_until = 0.0
-            if center > 0 and center > _EXT_NUDGE_CM:
-                # still too far — nudge again
-                self._ext_nudge_until = now + _EXT_NUDGE_MS / 1000.0
-                return _fwd(SPEED_APPROACH)
-            # close enough — start the pending step
-            self._ext_step_start = now
-            step = _EXT_SEQUENCE[self._ext_step]
-            cmd = self._ext_cmd(step)
-            self.last_sent = cmd
-            return cmd
+            if not valid:
+                self._ext_sensor_wait = True
+                return None
+            return self._ext_start_step(now, center)
 
         # Normal step timing check
-        action, duration_ms, _ = _EXT_SEQUENCE[self._ext_step]
+        _, duration_ms, _ = _EXT_SEQUENCE[self._ext_step]
         if (now - self._ext_step_start) < duration_ms / 1000.0:
             return None  # current step still running
 
@@ -422,16 +428,22 @@ class Aligner:
             self._log("✅ Extinguish complete → 360° re-scan", "info")
             return self._start_scan(now)
 
-        # Check distance before starting the next step
+        if not valid:
+            self._ext_sensor_wait = True
+            self._log(f"⏳ sensor={center}cm — waiting for valid reading", "info")
+            return None
+
+        return self._ext_start_step(now, center)
+
+    def _ext_start_step(self, now, center):
+        """Nudge forward if needed, then execute the current pending step."""
         if center > 0 and center > _EXT_NUDGE_CM:
             self._ext_nudge_until = now + _EXT_NUDGE_MS / 1000.0
             self._log(f"🚶 nudge fwd (front={center}cm > {_EXT_NUDGE_CM}cm)", "info")
             return _fwd(SPEED_APPROACH)
-
-        # Within range — execute next step immediately
         self._ext_step_start = now
         step = _EXT_SEQUENCE[self._ext_step]
-        action, _, _ = step
+        action = step[0]
         if action == "WAIT":
             self._log(f"🚿 slow sweep done — pausing {_EXT_PAUSE_MS}ms", "info")
         elif action == "PUMP_ON" and self._ext_step > 1:
