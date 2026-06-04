@@ -60,62 +60,57 @@ SIDE_CM             = _A.side_cm
 ROAM_SCAN_INTERVAL  = _A.roam_scan_interval
 
 # ── Extinguishing sequence ────────────────────────────────────────────────────
-# Turn durations are derived from the TURN_90_ALIGN_MS calibration at SPEED_ALIGN.
-# Linear speed→angle scaling assumed — verify on the rig and adjust ms values.
-_EXT_SPD_SLOW    = 50    # PWM for slow sweep
-_EXT_SPD_FAST    = 70    # PWM for fast sweep
-_EXT_SETTLE_SLOW = 100   # ms pause between turns (slow phase)
-_EXT_SETTLE_FAST = 80    # ms pause between turns (fast phase)
-_EXT_PAUSE_MS    = 1500  # ms gap between phases (pump off → pump on)
-_EXT_DEG_FULL    = 40    # °  each oscillation step (left / right)
-_EXT_DEG_HALF    = _EXT_DEG_FULL / 2   # °  initial offset right (+) and final return left (-)
-
-
-def _deg_ms(degrees, speed):
-    """Motor-on time (ms) to rotate ``degrees`` at ``speed`` PWM.
-
-    Derived from TURN_90_ALIGN_MS measured at SPEED_ALIGN. Linear scaling
-    assumed: slower speed → proportionally longer time for the same angle.
-    """
-    return int((TURN_90_ALIGN_MS / 90) * (SPEED_ALIGN / speed) * degrees)
-
+# ms derived from the alignment calibration: (deg / 90) * TURN_90_ALIGN_MS.
+_EXT_DEG         = 15    # ° per step — only value to tune on the rig
+_EXT_MS          = int((_EXT_DEG / 90.0) * TURN_90_ALIGN_MS)  # computed once
+_EXT_SPD_SLOW    = 50    # PWM for phase 1
+_EXT_SPD_FAST    = 80    # PWM for phase 2
+_EXT_SETTLE_SLOW = 150   # ms pause between turns (slow phase)
+_EXT_SETTLE_FAST = 50    # ms pause between turns (fast phase)
+_EXT_PAUSE_MS    = 1500  # ms gap between phases
 
 # Each step: (action, duration_ms, speed)
-#   action      ∈ {TURN_R, TURN_L, STOP, PUMP_ON, PUMP_OFF, WAIT}
-#   duration_ms = 0 → command is sent instantly; step advances on the next frame
-#   speed       = None for non-motion actions
+#   Pattern per phase: L R R L L R R L — 2 back-and-forth cycles, ends at center.
 _EXT_SEQUENCE = [
-    # ── Phase 1: slow oscillating sweep with pump on ──────────────────────────
-    ("PUMP_ON",  0,                                        None),
-    ("TURN_R",   _deg_ms(_EXT_DEG_HALF, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +half right
-    ("STOP",     _EXT_SETTLE_SLOW,                         None),
-    ("TURN_L",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -full left
-    ("STOP",     _EXT_SETTLE_SLOW,                         None),
-    ("TURN_R",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +full right
-    ("STOP",     _EXT_SETTLE_SLOW,                         None),
-    ("TURN_L",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -full left
-    ("STOP",     _EXT_SETTLE_SLOW,                         None),
-    ("TURN_R",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # +full right
-    ("STOP",     _EXT_SETTLE_SLOW,                         None),
-    ("TURN_L",   _deg_ms(_EXT_DEG_HALF, _EXT_SPD_SLOW),   _EXT_SPD_SLOW),  # -half → center
-    ("STOP",     0,                                        None),
-    ("PUMP_OFF", 0,                                        None),
-    ("WAIT",     _EXT_PAUSE_MS,                            None),
-    # ── Phase 2: fast oscillating sweep with pump on ──────────────────────────
-    ("PUMP_ON",  0,                                        None),
-    ("TURN_R",   _deg_ms(_EXT_DEG_HALF, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +half right
-    ("STOP",     _EXT_SETTLE_FAST,                         None),
-    ("TURN_L",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -full left
-    ("STOP",     _EXT_SETTLE_FAST,                         None),
-    ("TURN_R",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +full right
-    ("STOP",     _EXT_SETTLE_FAST,                         None),
-    ("TURN_L",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -full left
-    ("STOP",     _EXT_SETTLE_FAST,                         None),
-    ("TURN_R",   _deg_ms(_EXT_DEG_FULL, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # +full right
-    ("STOP",     _EXT_SETTLE_FAST,                         None),
-    ("TURN_L",   _deg_ms(_EXT_DEG_HALF, _EXT_SPD_FAST),   _EXT_SPD_FAST),  # -half → center
-    ("STOP",     0,                                        None),
-    ("PUMP_OFF", 0,                                        None),
+    # ── Phase 1: slow ─────────────────────────────────────────────────────────
+    ("PUMP_ON",  0,       None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     _EXT_SETTLE_SLOW, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     _EXT_SETTLE_SLOW, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     _EXT_SETTLE_SLOW, None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     _EXT_SETTLE_SLOW, None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     _EXT_SETTLE_SLOW, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     _EXT_SETTLE_SLOW, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     _EXT_SETTLE_SLOW, None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_SLOW),
+    ("STOP",     0,       None),
+    ("PUMP_OFF", 0,       None),
+    ("WAIT",     _EXT_PAUSE_MS, None),
+    # ── Phase 2: fast ─────────────────────────────────────────────────────────
+    ("PUMP_ON",  0,       None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     _EXT_SETTLE_FAST, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     _EXT_SETTLE_FAST, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     _EXT_SETTLE_FAST, None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     _EXT_SETTLE_FAST, None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     _EXT_SETTLE_FAST, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     _EXT_SETTLE_FAST, None),
+    ("TURN_R",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     _EXT_SETTLE_FAST, None),
+    ("TURN_L",   _EXT_MS, _EXT_SPD_FAST),
+    ("STOP",     0,       None),
+    ("PUMP_OFF", 0,       None),
 ]
 
 
