@@ -94,17 +94,17 @@ ROAM_SCAN_INTERVAL  = _A.roam_scan_interval
 
 # ── Extinguishing sequence ────────────────────────────────────────────────────
 # ms derived from the alignment calibration: (deg / 90) * TURN_90_ALIGN_MS.
-_EXT_DEG         = 15    # ° per step — only value to tune on the rig
+_EXT_DEG         = 10    # ° per step — only value to tune on the rig
 _EXT_MS          = int((_EXT_DEG / 90.0) * TURN_90_ALIGN_MS)  # computed once
-_EXT_SPD_SLOW    = 50    # PWM for phase 1
-_EXT_SPD_FAST    = 80    # PWM for phase 2
-_EXT_SETTLE_SLOW = 150   # ms pause between turns (slow phase)
-_EXT_SETTLE_FAST = 50    # ms pause between turns (fast phase)
-_EXT_PAUSE_MS    = 1500  # ms gap between phases
+_EXT_SPD_SLOW    = 70    # PWM for phase 1
+_EXT_SPD_FAST    = 100    # PWM for phase 2
+_EXT_SETTLE_SLOW = 15   # ms pause between turns (slow phase)
+_EXT_SETTLE_FAST = 5    # ms pause between turns (fast phase)
+_EXT_PAUSE_MS    = 150  # ms gap between phases
 _EXT_CORRECT_MS  = _EXT_MS/2  # final right-nudge to hit true center — tune on rig
-_EXT_SPD_DRIVE   = 50    # PWM for forward/reverse phase 3
+_EXT_SPD_DRIVE   = 70    # PWM for forward/reverse phase 3
 _EXT_DRIVE_MS    = _EXT_MS   # ms per fwd/rev step — tune on rig
-_EXT_SETTLE_DRIVE = 100  # ms pause between fwd/rev steps
+_EXT_SETTLE_DRIVE = 10  # ms pause between fwd/rev steps
 _EXT_BACKOFF_MS  = 1000  # ms reverse ≈ 10cm back-off after extinguish — tune on rig
 
 # Each step: (action, duration_ms, speed)
